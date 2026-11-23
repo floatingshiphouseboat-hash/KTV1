@@ -1888,7 +1888,7 @@ function ktv_strip_emoji_prefix($name) {
         return '';
     }
     $name = trim((string) $name);
-    $name = preg_replace('/^[^\p{L}\p{N}]+/u', '', $name);
+    $name = (string) preg_replace('/^[^\p{L}\p{N}]+/u', '', $name);
     return trim($name);
 }
 
@@ -3361,7 +3361,7 @@ function ktv_send_admin_notification($booking_data) {
 
     $currency     = isset($booking_data['currency']) && !empty($booking_data['currency']) ? $booking_data['currency'] : ktv_get_currency_code();
     $currency_sym = ktv_get_currency_symbol($currency);
-    $total        = isset($booking_data['total']) ? floatval($booking_data['total']) : 0;;
+    $total        = isset($booking_data['total']) ? floatval($booking_data['total']) : 0;
 
     $token = '';
     if (!empty($voucher_code)) {
@@ -5815,6 +5815,83 @@ function ktv_get_visible_pax_keys($attributes) {
     return $default;
 }
 
+function ktv_resolve_pax_adult_count($attributes) {
+    $attributes = is_array($attributes) ? $attributes : array();
+    if (isset($attributes['defaultAdults']) && intval($attributes['defaultAdults']) > 0) {
+        return intval($attributes['defaultAdults']);
+    }
+    $keys = ktv_get_visible_pax_keys($attributes);
+    $primary = !empty($keys) ? $keys[0] : 'pax1';
+    if ($primary === 'pax1') return 1;
+    if ($primary === 'pax2') return 2;
+    if ($primary === 'pax3') return 3;
+    if ($primary === 'group') {
+        $gm = isset($attributes['groupMaxPersons']) ? intval($attributes['groupMaxPersons']) : 0;
+        return $gm > 0 ? $gm : 4;
+    }
+    if ($primary === 'family') {
+        $fm = isset($attributes['familyMaxPersons']) ? intval($attributes['familyMaxPersons']) : 0;
+        return $fm > 0 ? $fm : 4;
+    }
+    return 1;
+}
+
+function ktv_hex_to_rgb($color) {
+    $raw = trim((string) $color);
+    if ($raw === '' || stripos($raw, 'transparent') !== false) {
+        return array(255, 255, 255);
+    }
+    $hex = ltrim($raw, '#');
+    if (strlen($hex) === 8 && ctype_xdigit($hex)) {
+        $hex = substr($hex, 0, 6);
+    }
+    if (strlen($hex) === 3 && ctype_xdigit($hex)) {
+        list($c1, $c2, $c3) = str_split($hex, 1);
+        return array(hexdec($c1 . $c1), hexdec($c2 . $c2), hexdec($c3 . $c3));
+    }
+    if (strlen($hex) === 6 && ctype_xdigit($hex)) {
+        list($h1, $h2, $h3) = str_split($hex, 2);
+        return array(hexdec($h1), hexdec($h2), hexdec($h3));
+    }
+    if (preg_match('/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i', $raw, $m)) {
+        array_shift($m);
+        list($r, $g, $b) = $m;
+        return array(intval($r), intval($g), intval($b));
+    }
+    return array(255, 255, 255);
+}
+
+function ktv_relative_luminance($rgb) {
+    if (!is_array($rgb) || count($rgb) < 3) {
+        return 1.0;
+    }
+    $ch = array();
+    foreach ($rgb as $v) {
+        $s = floatval($v) / 255.0;
+        $ch[] = ($s <= 0.03928) ? ($s / 12.92) : pow(($s + 0.055) / 1.055, 2.4);
+    }
+    list($lr, $lg, $lb) = $ch;
+    return (0.2126 * $lr) + (0.7152 * $lg) + (0.0722 * $lb);
+}
+
+function ktv_ensure_contrast_pair($bg, $fg, $min_ratio = 4.5) {
+    $bg_rgb = ktv_hex_to_rgb($bg);
+    $fg_rgb = ktv_hex_to_rgb($fg);
+    $l_bg   = ktv_relative_luminance($bg_rgb);
+    $l_fg   = ktv_relative_luminance($fg_rgb);
+    $ratio  = (max($l_bg, $l_fg) + 0.05) / (min($l_bg, $l_fg) + 0.05);
+    if ($ratio >= $min_ratio) {
+        return array('bg' => $bg, 'fg' => $fg);
+    }
+    $white_ratio = (1.0 + 0.05) / ($l_bg + 0.05);
+    $black_ratio = ($l_bg + 0.05) / (0.0 + 0.05);
+    return array(
+        'bg' => $bg,
+        'fg' => ($white_ratio >= $black_ratio) ? '#ffffff' : '#111111'
+    );
+}
+
+
 /* ============================================================
    23. IMAGE HELPERS
    ============================================================ */
@@ -6325,85 +6402,105 @@ function ktv_get_mandatory_fields($attributes, $form_type = 'booking') {
 /* ============================================================
    28. PAX COLUMN RENDERER
    ============================================================ */
-
 function ktv_render_pax_columns_html($attributes, $currency, $options = array()) {
     $attributes = is_array($attributes) ? $attributes : array();
 
-    $show_pax = isset($options['show_pax']) ? $options['show_pax'] : (isset($attributes['showPax']) ? $attributes['showPax'] : true);
+    $show_pax = isset($options['show_pax']) ? (bool) $options['show_pax'] : (isset($attributes['showPax']) ? (bool) $attributes['showPax'] : true);
     if (!$show_pax) {
         return '';
     }
 
     $visible_keys = ktv_get_visible_pax_keys($attributes);
+    $enable_ip    = isset($attributes['enableIpPricing']) ? (bool) $attributes['enableIpPricing'] : true;
 
-    $icon_size  = isset($options['icon_size'])  ? $options['icon_size']  : (isset($attributes['iconSize'])  ? $attributes['iconSize']  : '14px');
-    $icon_color = isset($options['icon_color']) ? $options['icon_color'] : (isset($attributes['iconColor']) ? $attributes['iconColor'] : '#075e54');
-    $grid_class = isset($options['grid_class']) ? $options['grid_class'] : 'ktv-tour-pax-grid';
-    $wrapper_style = isset($options['wrapper_style']) ? $options['wrapper_style'] : '';
+    $icon_size    = isset($options['icon_size']) ? $options['icon_size'] : (isset($attributes['paxIconSize']) ? $attributes['paxIconSize'] : (isset($attributes['iconSize']) ? $attributes['iconSize'] : '14px'));
+    $icon_color   = isset($attributes['paxIconColor']) && !empty($attributes['paxIconColor'])
+        ? $attributes['paxIconColor']
+        : (isset($options['icon_color']) ? $options['icon_color'] : (isset($attributes['iconColor']) ? $attributes['iconColor'] : '#075e54'));
+    $pax_bg_col   = isset($attributes['paxBgColor']) && !empty($attributes['paxBgColor']) ? $attributes['paxBgColor'] : '#f4f8f6';
+    $raw_text_col = isset($attributes['paxTextColor']) && !empty($attributes['paxTextColor']) ? $attributes['paxTextColor'] : '#222222';
+
+    if (function_exists('ktv_accessible_text_color')) {
+        $pax_text_fg = ktv_accessible_text_color($pax_bg_col, $raw_text_col);
+    } elseif (function_exists('ktv_ensure_contrast_pair')) {
+        $text_pair   = ktv_ensure_contrast_pair($pax_bg_col, $raw_text_col);
+        $pax_text_fg = $text_pair['fg'];
+    } else {
+        $pax_text_fg = $raw_text_col;
+    }
 
     $all_columns = array(
         'pax1' => array(
             'price' => isset($attributes['pax1Price']) ? floatval($attributes['pax1Price']) : 0,
-            'label' => isset($attributes['pax1Label']) ? $attributes['pax1Label'] : '1 Pax',
-            'icon'  => isset($attributes['pax1Icon']) ? $attributes['pax1Icon'] : 'fa-user',
+            'label' => isset($attributes['pax1Label']) && $attributes['pax1Label'] !== '' ? $attributes['pax1Label'] : '1 Pax',
+            'icon'  => isset($attributes['pax1Icon']) && $attributes['pax1Icon'] !== '' ? $attributes['pax1Icon'] : 'fa-user',
+            'count' => 1,
             'max'   => 0
         ),
         'pax2' => array(
             'price' => isset($attributes['pax2Price']) ? floatval($attributes['pax2Price']) : 0,
-            'label' => isset($attributes['pax2Label']) ? $attributes['pax2Label'] : '2 Pax',
-            'icon'  => isset($attributes['pax2Icon']) ? $attributes['pax2Icon'] : 'fa-user-friends',
+            'label' => isset($attributes['pax2Label']) && $attributes['pax2Label'] !== '' ? $attributes['pax2Label'] : '2 Pax',
+            'icon'  => isset($attributes['pax2Icon']) && $attributes['pax2Icon'] !== '' ? $attributes['pax2Icon'] : 'fa-user',
+            'count' => 2,
             'max'   => 0
         ),
         'pax3' => array(
             'price' => isset($attributes['pax3Price']) ? floatval($attributes['pax3Price']) : 0,
-            'label' => isset($attributes['pax3Label']) ? $attributes['pax3Label'] : '3 Pax',
-            'icon'  => isset($attributes['pax3Icon']) ? $attributes['pax3Icon'] : 'fa-users',
+            'label' => isset($attributes['pax3Label']) && $attributes['pax3Label'] !== '' ? $attributes['pax3Label'] : '3 Pax',
+            'icon'  => isset($attributes['pax3Icon']) && $attributes['pax3Icon'] !== '' ? $attributes['pax3Icon'] : 'fa-user',
+            'count' => 3,
             'max'   => 0
         ),
         'group' => array(
             'price' => isset($attributes['groupPrice']) ? floatval($attributes['groupPrice']) : 0,
-            'label' => isset($attributes['groupLabel']) ? $attributes['groupLabel'] : 'Group',
-            'icon'  => isset($attributes['groupIcon']) ? $attributes['groupIcon'] : 'fa-user-plus',
+            'label' => isset($attributes['groupLabel']) && $attributes['groupLabel'] !== '' ? $attributes['groupLabel'] : 'Group',
+            'icon'  => isset($attributes['groupIcon']) && $attributes['groupIcon'] !== '' ? $attributes['groupIcon'] : 'fa-user',
+            'count' => 3,
             'max'   => isset($attributes['groupMaxPersons']) ? intval($attributes['groupMaxPersons']) : 0
         ),
         'family' => array(
             'price' => isset($attributes['familyPrice']) ? floatval($attributes['familyPrice']) : 0,
-            'label' => isset($attributes['familyLabel']) ? $attributes['familyLabel'] : 'Family',
-            'icon'  => isset($attributes['familyIcon']) ? $attributes['familyIcon'] : 'fa-home',
+            'label' => isset($attributes['familyLabel']) && $attributes['familyLabel'] !== '' ? $attributes['familyLabel'] : 'Family',
+            'icon'  => isset($attributes['familyIcon']) && $attributes['familyIcon'] !== '' ? $attributes['familyIcon'] : 'fa-user',
+            'count' => 3,
             'max'   => isset($attributes['familyMaxPersons']) ? intval($attributes['familyMaxPersons']) : 0
         )
     );
 
-    $visible_columns = array();
+    $items_html = '';
     foreach ($visible_keys as $key) {
-        if (isset($all_columns[$key]) && $all_columns[$key]['price'] > 0) {
-            $visible_columns[] = $all_columns[$key];
+        if (!isset($all_columns[$key])) {
+            continue;
         }
+        $col = $all_columns[$key];
+        $label_display = $col['label'];
+        if ($col['max'] > 0) {
+            $label_display .= ' (' . intval($col['max']) . ')';
+        }
+        $icons_html = '<span class="ktv-pax-icons-group" style="display:inline-flex;align-items:center;justify-content:center;gap:3px;margin-bottom:4px;">';
+        for ($ic = 0; $ic < $col['count']; $ic++) {
+            $icons_html .= '<i class="fas ' . esc_attr($col['icon']) . '" aria-hidden="true" style="font-size:' . esc_attr($icon_size) . ';color:' . esc_attr($icon_color) . ';"></i>';
+        }
+        $icons_html .= '</span>';
+
+        $price_html = '';
+        if ($col['price'] > 0) {
+            $converted = $enable_ip ? ktv_convert_price($col['price']) : round($col['price'], 2);
+            $price_html = '<strong style="display:block;color:var(--ktv-pax-price,#0b5e2b);font-size:13px;">' . esc_html($currency . number_format($converted, 0)) . '</strong>';
+        }
+
+        $items_html .= '<div class="ktv-pax-item" style="text-align:center;font-size:12px;">'
+            . $icons_html
+            . '<span style="display:block;color:' . esc_attr($pax_text_fg) . ';margin-bottom:2px;">' . esc_html($label_display) . '</span>'
+            . $price_html
+            . '</div>';
     }
 
-    if (empty($visible_columns)) {
+    if ($items_html === '') {
         return '';
     }
 
-    $html = '<div class="' . esc_attr($grid_class) . '"';
-    if (!empty($wrapper_style)) {
-        $html .= ' style="' . esc_attr($wrapper_style) . '"';
-    }
-    $html .= '>';
-    foreach ($visible_columns as $col) {
-        $label_display = $col['label'];
-        if ($col['max'] > 0) {
-            $label_display .= ' (up to ' . intval($col['max']) . ')';
-        }
-        $html .= '<div class="ktv-pax-item" style="text-align:center;font-size:12px;">';
-        $html .= '<i class="fas ' . esc_attr($col['icon']) . '" style="font-size:' . esc_attr($icon_size) . ';color:' . esc_attr($icon_color) . ';display:block;margin-bottom:4px;"></i>';
-        $html .= '<span style="display:block;color:#666;margin-bottom:2px;">' . esc_html($label_display) . '</span>';
-        $html .= '<strong style="color:#28a745;font-size:13px;">' . esc_html($currency . number_format(ktv_convert_price($col['price']), 2)) . '</strong>';
-        $html .= '</div>';
-    }
-    $html .= '</div>';
-
-    return $html;
+    return '<div class="ktv-tour-pax-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px;margin-bottom:12px;padding:10px;background:' . esc_attr($pax_bg_col) . ';border-radius:8px;">' . $items_html . '</div>';
 }
 /* ============================================================
    29. RENDER — TOUR CARD
@@ -6659,7 +6756,10 @@ function ktv_render_block_product_card($attributes) {
     $cardBorderColor     = isset($attributes['cardBorderColor']) ? $attributes['cardBorderColor'] : '#e0e0e0';
     $cardBorderSize      = isset($attributes['cardBorderSize']) ? $attributes['cardBorderSize'] : '1px';
     $cardBorderRadius    = isset($attributes['cardBorderRadius']) ? $attributes['cardBorderRadius'] : '16px';
-    $currency            = ktv_get_currency_symbol();
+        $enableIpPricing     = isset($attributes['enableIpPricing']) ? (bool) $attributes['enableIpPricing'] : true;
+    $customCurrencySym   = isset($attributes['customCurrencySymbol']) && $attributes['customCurrencySymbol'] !== '' ? $attributes['customCurrencySymbol'] : '';
+    $currency            = $enableIpPricing ? ktv_get_currency_symbol() : ($customCurrencySym ?: ktv_get_currency_symbol('INR'));
+    $oldPriceColor       = isset($attributes['oldPriceColor']) && !empty($attributes['oldPriceColor']) ? $attributes['oldPriceColor'] : '#595959';
     $displayPrice        = ($offerPrice && $offerPrice > 0 && $offerPrice < $price) ? $offerPrice : $price;
     $showOldPrice        = ($offerPrice && $offerPrice > 0 && $offerPrice < $price);
     $calculatedPercent   = ($showOldPrice && $price > 0) ? round(($price - $offerPrice) / $price * 100) : 0;
@@ -6680,12 +6780,18 @@ function ktv_render_block_product_card($attributes) {
     $gst_label   = isset($attributes['gstLabel']) ? $attributes['gstLabel'] : ktv_get_setting('gst_label', 'GST');
     $showGst     = isset($attributes['showGst']) ? $attributes['showGst'] : true;
 
-    $gst_badge_bg   = isset($attributes['badgeBgColor']) && !empty($attributes['badgeBgColor']) ? $attributes['badgeBgColor'] : '#fff3e0';
-    $gst_badge_text = isset($attributes['badgeTextColor']) && !empty($attributes['badgeTextColor']) ? $attributes['badgeTextColor'] : '#ff6b00';
+    $gst_badge_bg   = isset($attributes['gstBgColor']) && !empty($attributes['gstBgColor']) ? $attributes['gstBgColor'] : (isset($attributes['badgeBgColor']) && !empty($attributes['badgeBgColor']) ? $attributes['badgeBgColor'] : '#fff3e0');
+    $gst_badge_text = isset($attributes['gstTextColor']) && !empty($attributes['gstTextColor']) ? $attributes['gstTextColor'] : (isset($attributes['badgeTextColor']) && !empty($attributes['badgeTextColor']) ? $attributes['badgeTextColor'] : '#7c2d12');
     if (strtolower($gst_badge_bg) === '#ffffff' && strtolower($gst_badge_text) === '#ffffff') {
         $gst_badge_bg   = '#fff3e0';
-        $gst_badge_text = '#ff6b00';
+        $gst_badge_text = '#7c2d12';
     }
+    if (function_exists('ktv_ensure_contrast_pair')) {
+        $c_gst          = ktv_ensure_contrast_pair($gst_badge_bg, $gst_badge_text);
+        $gst_badge_bg   = $c_gst['bg'];
+        $gst_badge_text = $c_gst['fg'];
+    }
+
 
     $cancellation_policy = isset($attributes['cancellationPolicy']) ? $attributes['cancellationPolicy'] : 'non_refundable';
     $cancellation_text   = isset($attributes['cancellationText']) ? $attributes['cancellationText'] : '';
@@ -6735,14 +6841,20 @@ function ktv_render_block_product_card($attributes) {
 
     $gallery_slides = array();
     if (!empty($gallery_images)) {
-        $image_ids = array_map('trim', explode(',', $gallery_images));
-        foreach ($image_ids as $gid) {
-            $img = wp_get_attachment_image_url(intval($gid), $image_display_size);
-            if ($img) {
-                $gallery_slides[] = $img;
+        $gallery_items = is_array($gallery_images) ? $gallery_images : array_map('trim', explode(',', (string) $gallery_images));
+        foreach ($gallery_items as $gitem) {
+            if (empty($gitem)) continue;
+            if (filter_var($gitem, FILTER_VALIDATE_URL) || strpos($gitem, '/') === 0) {
+                $gallery_slides[] = esc_url_raw($gitem);
+            } elseif (is_numeric($gitem) && intval($gitem) > 0) {
+                $img = wp_get_attachment_image_url(intval($gitem), $image_display_size);
+                if ($img) {
+                    $gallery_slides[] = $img;
+                }
             }
         }
     }
+
 
     $wishlist_count = 0;
     if ($tour_id > 0) {
@@ -7050,14 +7162,16 @@ function ktv_render_block_product_card($attributes) {
             <?php endif; ?>
             <div class="ktv-tour-price" style="margin-bottom:15px;display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;">
                 <?php if ($showOldPrice): ?>
-               <span class="ktv-old-price" style="text-decoration:line-through;color:#999;font-size:14px;margin-right:8px;"><?php echo esc_html($currency . number_format(ktv_convert_price($price), 2)); ?></span>
+                <span class="ktv-old-price" style="text-decoration:line-through;color:<?php echo esc_attr($oldPriceColor); ?>;font-size:14px;margin-right:8px;"><?php echo esc_html($currency . number_format($enableIpPricing ? ktv_convert_price($price) : $price, 2)); ?></span>
                 <?php endif; ?>
-                <span class="ktv-new-price" style="font-size:<?php echo esc_attr($priceFontSize); ?>; color:<?php echo esc_attr($priceColor); ?>; font-family:<?php echo esc_attr($priceFontFamily); ?>; font-weight:<?php echo esc_attr($priceFontWeight); ?>;"><?php echo esc_html($currency . number_format(ktv_convert_price($displayPrice), 2)); ?></span>
-                <span class="ktv-price-unit <?php echo $showCompletePrice ? 'ktv-price-unit--complete' : 'ktv-price-unit--per-day'; ?>" style="font-size:12px;color:#767676;"><?php echo $showCompletePrice ? '/ total' : '/ person'; ?></span>
-                <?php if ($showGst): ?>
-                <span class="ktv-gst-badge" style="display:inline-block;background:<?php echo esc_attr($gst_badge_bg); ?>;color:<?php echo esc_attr($gst_badge_text); ?>;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:5px;"><i class="fas fa-receipt"></i> <?php echo esc_html($gst_label); ?> <?php echo esc_html($gst_percent); ?>%</span>
+                <span class="ktv-new-price" style="font-size:<?php echo esc_attr($priceFontSize); ?>; color:<?php echo esc_attr($priceColor); ?>; font-family:<?php echo esc_attr($priceFontFamily); ?>; font-weight:<?php echo esc_attr($priceFontWeight); ?>;"><?php echo esc_html($currency . number_format($enableIpPricing ? ktv_convert_price($displayPrice) : $displayPrice, 2)); ?></span>
+
+              <?php if ($showGst): ?>
+                <span class="ktv-gst-badge" style="display:inline-block;background:<?php echo esc_attr($gst_badge_bg); ?>;color:<?php echo esc_attr($gst_badge_text); ?>;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-left:5px;"><i class="fas fa-receipt" aria-hidden="true"></i> <?php echo esc_html($gst_label); ?> <?php echo esc_html($gst_percent); ?>%</span>
                 <?php endif; ?>
             </div>
+
+
             <?php if (!empty($buttonUrl) && $buttonUrl !== '#'): ?>
             <a href="<?php echo esc_url($buttonUrl); ?>" class="ktv-tour-book-btn" data-tour-id="<?php echo esc_attr($tour_id); ?>" data-tour-name="<?php echo esc_attr($title); ?>" data-tour-price="<?php echo esc_attr($per_person_base); ?>" data-tour-location="<?php echo esc_attr($location); ?>" title="<?php echo esc_attr($buttonText . ' — ' . $title); ?>" data-block-type="card"<?php echo $pax_data_attrs; ?> style="<?php echo $btn_style; ?>width:100%;padding:<?php echo esc_attr($buttonPadding); ?>;border:none;border-radius:<?php echo esc_attr($buttonBorderRadius); ?>;font-weight:<?php echo esc_attr($buttonFontWeight); ?>;font-size:<?php echo esc_attr($buttonFontSize); ?>;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.3s cubic-bezier(0.4,0,0.2,1);position:relative;overflow:hidden;text-decoration:none;text-align:center;">
                 <i class="fas fa-calendar-check"></i> <?php echo esc_html($buttonText); ?>
@@ -7393,14 +7507,31 @@ function ktv_render_block_product_grid($attributes) {
     $gst_label   = isset($attributes['gstLabel']) ? $attributes['gstLabel'] : ktv_get_setting('gst_label', 'GST');
     $showGst     = isset($attributes['showGst']) ? $attributes['showGst'] : true;
 
-    $gst_badge_bg   = isset($attributes['badgeBgColor']) && !empty($attributes['badgeBgColor']) ? $attributes['badgeBgColor'] : '#fff3e0';
-    $gst_badge_text = isset($attributes['badgeTextColor']) && !empty($attributes['badgeTextColor']) ? $attributes['badgeTextColor'] : '#ff6b00';
-    if (strtolower($gst_badge_bg) === '#ffffff' && strtolower($gst_badge_text) === '#ffffff') {
-        $gst_badge_bg   = '#fff3e0';
-        $gst_badge_text = '#ff6b00';
+    $enableIpPricing    = isset($attributes['enableIpPricing']) ? (bool) $attributes['enableIpPricing'] : true;
+    $customCurrencySym  = isset($attributes['customCurrencySymbol']) && $attributes['customCurrencySymbol'] !== '' ? $attributes['customCurrencySymbol'] : '';
+    $cardBgColor        = isset($attributes['cardBgColor']) && !empty($attributes['cardBgColor']) ? $attributes['cardBgColor'] : '#ffffff';
+    $badgeColor         = isset($attributes['badgeColor']) && !empty($attributes['badgeColor']) ? $attributes['badgeColor'] : '#ff5722';
+    $dealBadgeColor     = isset($attributes['dealBadgeColor']) && !empty($attributes['dealBadgeColor']) ? $attributes['dealBadgeColor'] : '#ff5722';
+    $dealBadgeTextColor = isset($attributes['dealBadgeTextColor']) && !empty($attributes['dealBadgeTextColor']) ? $attributes['dealBadgeTextColor'] : '#ffffff';
+    $oldPriceColor      = isset($attributes['oldPriceColor']) && !empty($attributes['oldPriceColor']) ? $attributes['oldPriceColor'] : '#595959';
+    $priceColor         = isset($attributes['offerPriceColor']) && !empty($attributes['offerPriceColor']) ? $attributes['offerPriceColor'] : $priceColor;
+    $gst_badge_bg       = isset($attributes['gstBgColor']) && !empty($attributes['gstBgColor']) ? $attributes['gstBgColor'] : (isset($attributes['badgeBgColor']) && !empty($attributes['badgeBgColor']) ? $attributes['badgeBgColor'] : '#fff3e0');
+    $gst_badge_text     = isset($attributes['gstTextColor']) && !empty($attributes['gstTextColor']) ? $attributes['gstTextColor'] : (isset($attributes['badgeTextColor']) && !empt($attributes['badgeTextColor']) ? $attributes['badgeTextColor'] : '#7c2d12');
+    $badgeTextColor     = isset($attributes['badgeTextColor']) && !empty($attributes['badgeTextColor']) ? $attributes['badgeTextColor'] : '#ffffff';
+
+    $badgeTextColor = isset($attributes['badgeTextColor']) && !empty($attributes['badgeTextColor']) ? $attributes['badgeTextColor'] : '#ffffff';
+
+    if (function_exists('ktv_ensure_contrast_pair')) {
+        $c_old   = ktv_ensure_contrast_pair($cardBgColor, $oldPriceColor);      $oldPriceColor  = $c_old['fg'];
+        $c_new   = ktv_ensure_contrast_pair($cardBgColor, $priceColor);         $priceColor     = $c_new['fg'];
+        $c_gst   = ktv_ensure_contrast_pair($gst_badge_bg, $gst_badge_text);    $gst_badge_bg   = $c_gst['bg']; $gst_badge_text = $c_gst['fg'];
+        $c_btn   = ktv_ensure_contrast_pair($buttonColor, $buttonTextColor);    $buttonColor    = $c_btn['bg']; $buttonTextColor = $c_btn['fg'];
+        $c_badge = ktv_ensure_contrast_pair($badgeColor, $badgeTextColor);      $badgeColor     = $c_badge['bg']; $badgeTextColor = $c_badge['fg'];
+        $c_deal  = ktv_ensure_contrast_pair($dealBadgeColor, $dealBadgeTextColor); $dealBadgeColor = $c_deal['bg']; $dealBadgeTextColor = $c_deal['fg'];
     }
 
-    $cur_symbol        = ktv_get_currency_symbol();
+
+    $cur_symbol        = $enableIpPricing ? ktv_get_currency_symbol() : ($customCurrencySym ?: ktv_get_currency_symbol('INR'));
     $grid_title_tag    = in_array($gridTitleHeading, array('h1', 'h2', 'h3', 'h4', 'h5', 'h6'), true) ? $gridTitleHeading : 'h2';
     $all_locations     = ktv_get_all_locations();
     $icon_class_suffix = ktv_icon_visibility_class($attributes);
@@ -7502,18 +7633,24 @@ function ktv_render_block_product_grid($attributes) {
                     }
                 }
                 $image_link   = isset($tour['imageLink']) ? $tour['imageLink'] : '';
-                $displayPrice = $tour['price'];
-                $oldPrice     = isset($tour['oldPrice']) ? $tour['oldPrice'] : 0;
+                $displayPrice = floatval($tour['price']);
+                $oldPrice     = isset($tour['oldPrice']) ? floatval($tour['oldPrice']) : (isset($tour['originalPrice']) ? floatval($tour['originalPrice']) : 0);
+                if ($oldPrice <= 0 && isset($tour['offerPrice']) && floatval($tour['offerPrice']) > 0 && floatval($tour['offerPrice']) < $displayPrice) {
+                    $oldPrice     = $displayPrice;
+                    $displayPrice = floatval($tour['offerPrice']);
+                }
                 $discount     = ($oldPrice > 0 && $oldPrice > $displayPrice) ? round(($oldPrice - $displayPrice) / $oldPrice * 100) : 0;
                 $tourId       = isset($tour['id']) ? $tour['id'] : 0;
 
-                $tourNightIcon      = isset($tour['nightIcon']) ? $tour['nightIcon'] : 'fa-moon';
-                $tourDayIcon        = isset($tour['dayIcon']) ? $tour['dayIcon'] : 'fa-sun';
-                $tourNightIconSize  = isset($tour['nightIconSize']) ? $tour['nightIconSize'] : '14px';
-                $tourDayIconSize    = isset($tour['dayIconSize']) ? $tour['dayIconSize'] : '14px';
-                $tourNightIconColor = isset($tour['nightIconColor']) ? $tour['nightIconColor'] : '#FFD700';
-                $tourDayIconColor   = isset($tour['dayIconColor']) ? $tour['dayIconColor'] : '#FFA500';
-                $tourShowNightDayIcons = isset($tour['showNightDayIcons']) ? $tour['showNightDayIcons'] : true;
+
+                $tourNightIcon      = !empty($attributes['nightIcon']) ? $attributes['nightIcon'] : (isset($tour['nightIcon']) ? $tour['nightIcon'] : 'fa-moon');
+                $tourDayIcon        = !empty($attributes['dayIcon']) ? $attributes['dayIcon'] : (isset($tour['dayIcon']) ? $tour['dayIcon'] : 'fa-sun');
+                $tourNightIconSize  = !empty($attributes['nightIconSize']) ? $attributes['nightIconSize'] : (isset($tour['nightIconSize']) ? $tour['nightIconSize'] : '14px');
+                $tourDayIconSize    = !empty($attributes['dayIconSize']) ? $attributes['dayIconSize'] : (isset($tour['dayIconSize']) ? $tour['dayIconSize'] : '14px');
+                $tourNightIconColor = !empty($attributes['nightIconColor']) ? $attributes['nightIconColor'] : (isset($tour['nightIconColor']) ? $tour['nightIconColor'] : '#FFD700');
+                $tourDayIconColor   = !empty($attributes['dayIconColor']) ? $attributes['dayIconColor'] : (isset($tour['dayIconColor']) ? $tour['dayIconColor'] : '#FFA500');
+                $tourShowNightDayIcons = isset($attributes['showNightDayIcons']) ? (bool) $attributes['showNightDayIcons'] : (isset($tour['showNightDayIcons']) ? $tour['showNightDayIcons'] : true);
+
                 $tourShowWishlist   = isset($tour['showWishlist']) ? $tour['showWishlist'] : $showWishlistGrid;
                 $tourShowBadge      = isset($tour['showBadge']) ? $tour['showBadge'] : $showBadge;
                 $tourShowIcons      = isset($tour['showIcons']) ? $tour['showIcons'] : $showIcons;
@@ -7813,16 +7950,18 @@ function ktv_render_block_product_grid($attributes) {
                     </div>
                     <?php endif; ?>
 
-                    <div class="ktv-tour-price" style="margin-bottom:15px;display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;">
-                        <?php if ($oldPrice > 0): ?>
-                        <span class="ktv-old-price" style="text-decoration:line-through;color:#999;font-size:14px;margin-right:8px;"><?php echo esc_html($cur_symbol . number_format(ktv_convert_price($oldPrice), 2)); ?></span>
+                        <div class="ktv-tour-price" style="margin-bottom:15px;display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;">
+                        <?php if ($oldPrice > 0 && $oldPrice > $displayPrice): ?>
+                        <span class="ktv-old-price" style="text-decoration:line-through;color:<?php echo esc_attr($oldPriceColor); ?>;font-size:14px;margin-right:8px;"><?php echo esc_html($cur_symbol . number_format($enableIpPricing ? ktv_convert_price($oldPrice) : $oldPrice, 2)); ?></span>
                         <?php endif; ?>
-                         <span class="ktv-new-price" style="font-size:<?php echo esc_attr($priceFontSize); ?>; color:<?php echo esc_attr($priceColor); ?>;"><?php echo esc_html($cur_symbol . number_format(ktv_convert_price($displayPrice), 2)); ?></span>
-                        <span class="ktv-price-unit <?php echo $tourShowComplete ? 'ktv-price-unit--complete' : 'ktv-price-unit--per-day'; ?>" style="font-size:12px;color:#767676;"><?php echo $tourShowComplete ? '/ total' : '/ person'; ?></span>
+                        <span class="ktv-new-price" style="font-size:<?php echo esc_attr($priceFontSize); ?>; color:<?php echo esc_attr($priceColor); ?>;"><?php echo esc_html($cur_symbol . number_format($enableIpPricing ? ktv_convert_price($displayPrice) : $displayPrice, 2)); ?></span>
+
                         <?php if ($showGst): ?>
-                        <span class="ktv-gst-badge" style="display:inline-block;background:<?php echo esc_attr($gst_badge_bg); ?>;color:<?php echo esc_attr($gst_badge_text); ?>;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:5px;"><i class="fas fa-receipt"></i> <?php echo esc_html($gst_label); ?> <?php echo esc_html($gst_percent); ?>%</span>
+                        <span class="ktv-gst-badge" style="display:inline-block;background:<?php echo esc_attr($gst_badge_bg); ?>;color:<?php echo esc_attr($gst_badge_text); ?>;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-left:5px;"><i class="fas fa-receipt" aria-hidden="true"></i> <?php echo esc_html($gst_label); ?> <?php echo esc_html($gst_percent); ?>%</span>
                         <?php endif; ?>
                     </div>
+
+
                     <?php if (!empty($buttonUrl) && $buttonUrl !== '#'): ?>
                     <a href="<?php echo esc_url($buttonUrl); ?>" class="ktv-tour-book-btn" data-tour-id="<?php echo esc_attr($tourId); ?>" data-tour-name="<?php echo esc_attr($tour['title']); ?>" data-tour-price="<?php echo esc_attr($grid_per_person_base); ?>" data-tour-location="<?php echo esc_attr($tour['location']); ?>" title="<?php echo esc_attr($buttonText . ' — ' . $tour['title']); ?>" data-block-type="grid"<?php echo $grid_pax_data_attrs; ?> style="--ktv-btn-bg:<?php echo esc_attr($buttonColor); ?>;--ktv-btn-text:<?php echo esc_attr($buttonTextColor); ?>;width:100%;padding:12px;background:var(--ktv-btn-bg);color:var(--ktv-btn-text);border:none;border-radius:30px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.3s cubic-bezier(0.4,0,0.2,1);font-size:14px;position:relative;overflow:hidden;text-decoration:none;text-align:center;">
                         <i class="fas fa-calendar-check"></i> <?php echo esc_html($buttonText); ?>
@@ -8026,7 +8165,9 @@ function ktv_render_block_tour_package($attributes) {
     $promoDiscount = isset($attributes['promoDiscount']) ? intval($attributes['promoDiscount']) : 0;
     $promoCodeValidUntil = isset($attributes['promoCodeValidUntil']) ? $attributes['promoCodeValidUntil'] : '';
     $buttonUrl   = isset($attributes['buttonUrl']) ? $attributes['buttonUrl'] : '#';
-    $currency    = ktv_get_currency_symbol();
+    $enableIpPricing = isset($attributes['enableIpPricing']) ? (bool) $attributes['enableIpPricing'] : true;
+    $customCurrencySym = isset($attributes['customCurrencySymbol']) && $attributes['customCurrencySymbol'] !== '' ? $attributes['customCurrencySymbol'] : '';
+    $currency    = $enableIpPricing ? ktv_get_currency_symbol() : ($customCurrencySym ?: ktv_get_currency_symbol('INR'));
     $showWishlist = isset($attributes['showWishlist']) ? $attributes['showWishlist'] : true;
     $showBadge   = isset($attributes['showBadge']) ? $attributes['showBadge'] : true;
     $showIcons   = isset($attributes['showIcons']) ? $attributes['showIcons'] : true;
@@ -8056,13 +8197,22 @@ function ktv_render_block_tour_package($attributes) {
     $gst_label   = isset($attributes['gstLabel']) ? $attributes['gstLabel'] : ktv_get_setting('gst_label', 'GST');
     $showGst     = isset($attributes['showGst']) ? $attributes['showGst'] : true;
 
-    $gst_badge_bg   = isset($attributes['badgeBgColor']) && !empty($attributes['badgeBgColor']) ? $attributes['badgeBgColor'] : '#fff3e0';
-    $gst_badge_text = isset($attributes['badgeTextColor']) && !empty($attributes['badgeTextColor']) ? $attributes['badgeTextColor'] : '#ff6b00';
-    if (strtolower($gst_badge_bg) === '#ffffff' && strtolower($gst_badge_text) === '#ffffff') {
-        $gst_badge_bg   = '#fff3e0';
-        $gst_badge_text = '#ff6b00';
-    }
+    $cardBgColor    = isset($attributes['cardBgColor']) && !empty($attributes['cardBgColor']) ? $attributes['cardBgColor'] : '#ffffff';
+    $oldPriceColor  = isset($attributes['oldPriceColor']) && !empty($attributes['oldPriceColor']) ? $attributes['oldPriceColor'] : '#595959';
+    $priceColor     = isset($attributes['offerPriceColor']) && !empty($attributes['offerPriceColor']) ? $attributes['offerPriceColor'] : $priceColor;
+    $gst_badge_bg   = isset($attributes['gstBgColor']) && !empty($attributes['gstBgColor']) ? $attributes['gstBgColor'] : (isset($attributes['badgeBgColor']) && !empty($attributes['badgeBgColor']) ? $attributes['badgeBgColor'] : '#fff3e0');
+    $gst_badge_text = isset($attributes['gstTextColor']) && !empty($attributes['gstTextColor']) ? $attributes['gstTextColor'] : '#7c2d12';
 
+    $badgeTextColor = isset($attributes['badgeTextColor']) && !empty($attributes['badgeTextColor']) ? $attributes['badgeTextColor'] : '#ffffff';
+
+    if (function_exists('ktv_accessible_text_color')) {
+        $oldPriceColor      = ktv_accessible_text_color($cardBgColor, $oldPriceColor);
+        $priceColor         = ktv_accessible_text_color($cardBgColor, $priceColor);
+        $gst_badge_text     = ktv_accessible_text_color($gst_badge_bg, $gst_badge_text);
+        $badgeTextColor     = ktv_accessible_text_color($badgeColor, $badgeTextColor);
+        $dealBadgeTextColor = ktv_accessible_text_color($dealBadgeColor, $dealBadgeTextColor);
+        $buttonTextColor    = ktv_accessible_text_color($buttonColor, $buttonTextColor);
+    }
     $hotelsIcon       = isset($attributes['hotelsIcon']) ? $attributes['hotelsIcon'] : 'fa-hotel';
     $hotelsLabel      = isset($attributes['hotelsLabel']) ? $attributes['hotelsLabel'] : 'Hotels';
     $mealsIcon        = isset($attributes['mealsIcon']) ? $attributes['mealsIcon'] : 'fa-utensils';
@@ -8429,15 +8579,16 @@ function ktv_render_block_tour_package($attributes) {
             <div class="ktv-tour-package-price" style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:15px;flex-wrap:wrap;gap:5px;">
                 <div>
                     <?php if ($showOldPrice): ?>
-                    <span class="ktv-tour-package-old-price" style="text-decoration:line-through;color:#999;font-size:13px;margin-right:8px;"><?php echo esc_html($currency . number_format(ktv_convert_price($price), 2)); ?></span>
+                    <span class="ktv-tour-package-old-price" style="text-decoration:line-through;color:<?php echo esc_attr($oldPriceColor); ?>;font-size:13px;margin-right:8px;"><?php echo esc_html($currency . number_format($enableIpPricing ? ktv_convert_price($price) : $price, 2)); ?></span>
                     <?php endif; ?>
-                    <span class="ktv-tour-package-new-price" style="font-size:24px;font-weight:700;color:<?php echo esc_attr($priceColor); ?>;"><?php echo esc_html($currency . number_format(ktv_convert_price($displayPrice), 2)); ?></span>
-                    <span class="ktv-tour-package-price-unit <?php echo $showCompletePrice ? 'ktv-price-unit--complete' : 'ktv-price-unit--per-day'; ?>" style="font-size:11px;color:#767676;"><?php echo $showCompletePrice ? '/ total' : '/ person'; ?></span>
+                    <span class="ktv-tour-package-new-price" style="font-size:24px;font-weight:700;color:<?php echo esc_attr($priceColor); ?>;"><?php echo esc_html($currency . number_format($enableIpPricing ? ktv_convert_price($displayPrice) : $displayPrice, 2)); ?></span>
+
                     <?php if ($showGst): ?>
-                    <span class="ktv-gst-badge" style="display:inline-block;background:<?php echo esc_attr($gst_badge_bg); ?>;color:<?php echo esc_attr($gst_badge_text); ?>;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:5px;"><i class="fas fa-receipt"></i> <?php echo esc_html($gst_label); ?> <?php echo esc_html($gst_percent); ?>%</span>
+                    <span class="ktv-gst-badge" style="display:inline-block;background:<?php echo esc_attr($gst_badge_bg); ?>;color:<?php echo esc_attr($gst_badge_text); ?>;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-left:5px;"><i class="fas fa-receipt" aria-hidden="true"></i> <?php echo esc_html($gst_label); ?> <?php echo esc_html($gst_percent); ?>%</span>
                     <?php endif; ?>
                 </div>
             </div>
+
             <?php if (!empty($buttonUrl) && $buttonUrl !== '#'): ?>
             <a href="<?php echo esc_url($buttonUrl); ?>" class="ktv-tour-package-btn" data-tour-id="<?php echo esc_attr($tour_id); ?>" data-tour-name="<?php echo esc_attr($title); ?>" data-tour-price="<?php echo esc_attr($pkg_per_person_base); ?>" data-tour-location="<?php echo esc_attr($location); ?>" title="<?php echo esc_attr($buttonText . ' — ' . $title); ?>" data-block-type="package"<?php echo $pkg_pax_data_attrs; ?> style="<?php echo $pkg_btn_style; ?>width:100%;padding:12px;border:none;border-radius:30px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all 0.3s cubic-bezier(0.4,0,0.2,1);font-size:14px;position:relative;overflow:hidden;text-decoration:none;">
                 <i class="fas fa-calendar-check"></i> <?php echo esc_html($buttonText); ?>
@@ -8735,10 +8886,11 @@ function ktv_render_block_booking_form($attributes) {
 
     $countries = ktv_get_all_countries();
     $allFlights = ktv_get_all_flights();
-    $currency   = ktv_get_currency_symbol();
+    $enableIpPricing = isset($attributes['enableIpPricing']) ? (bool) $attributes['enableIpPricing'] : true;
+    $customCurrencySym = isset($attributes['customCurrencySymbol']) && $attributes['customCurrencySymbol'] !== '' ? $attributes['customCurrencySymbol'] : '';
+    $currency   = $enableIpPricing ? ktv_get_currency_symbol() : ($customCurrencySym ?: ktv_get_currency_symbol('INR'));
     $upiId      = ktv_get_upi_id();
     $id_document_mandatory = ktv_is_id_document_mandatory();
-
     $tour_type_price_gap = isset($attributes['tourTypePriceGap']) ? intval($attributes['tourTypePriceGap']) : 15;
     if ($tour_type_price_gap < 0 || $tour_type_price_gap > 200) {
         $tour_type_price_gap = 15;
@@ -8764,7 +8916,17 @@ function ktv_render_block_booking_form($attributes) {
     $stepNextTextColor = isset($attributes['stepNextTextColor']) && !empty($attributes['stepNextTextColor']) ? $attributes['stepNextTextColor'] : '#ffffff';
     $stepPrevBgColor = isset($attributes['stepPrevBgColor']) && !empty($attributes['stepPrevBgColor']) ? $attributes['stepPrevBgColor'] : '#6c757d';
     $stepPrevTextColor = isset($attributes['stepPrevTextColor']) && !empty($attributes['stepPrevTextColor']) ? $attributes['stepPrevTextColor'] : '#ffffff';
+    $travelTextColor = isset($attributes['travelTextColor']) && !empty($attributes['travelTextColor']) ? $attributes['travelTextColor'] : '#222222';
+    $travelBtnBgColor = isset($attributes['travelBtnBgColor']) && !empty($attributes['travelBtnBgColor']) ? $attributes['travelBtnBgColor'] : '#1e7e34';
+    $travelBtnTextColor = isset($attributes['travelBtnTextColor']) && !empty($attributes['travelBtnTextColor']) ? $attributes['travelBtnTextColor'] : '#ffffff';
+    $personalTextColor = isset($attributes['personalTextColor']) && !empty($attributes['personalTextColor']) ? $attributes['personalTextColor'] : '#222222';
+    $personalBtnBgColor = isset($attributes['personalBtnBgColor']) && !empty($attributes['personalBtnBgColor']) ? $attributes['personalBtnBgColor'] : '#1e7e34';
+    $personalBtnTextColor = isset($attributes['personalBtnTextColor']) && !empty($attributes['personalBtnTextColor']) ? $attributes['personalBtnTextColor'] : '#ffffff';
+    $paymentTextColor = isset($attributes['paymentTextColor']) && !empty($attributes['paymentTextColor']) ? $attributes['paymentTextColor'] : '#222222';
+    $paymentBtnBgColor = isset($attributes['paymentBtnBgColor']) && !empty($attributes['paymentBtnBgColor']) ? $attributes['paymentBtnBgColor'] : '#075e54';
+    $paymentBtnTextColor = isset($attributes['paymentBtnTextColor']) && !empty($attributes['paymentBtnTextColor']) ? $attributes['paymentBtnTextColor'] : '#ffffff';
     $buttonText      = isset($attributes['buttonText']) ? $attributes['buttonText'] : 'Confirm Booking';
+
     $multiStep       = isset($attributes['multiStep']) ? $attributes['multiStep'] : true;
     $formWidth       = isset($attributes['formWidth']) ? $attributes['formWidth'] : 'full';
     $borderColor     = isset($attributes['borderColor']) ? $attributes['borderColor'] : '#e0e0e0';
@@ -9131,13 +9293,22 @@ function ktv_render_block_booking_form($attributes) {
 
     $placeholder_style = '--ktv-placeholder-color:' . esc_attr($placeholderColor) . ';--ktv-placeholder-size:' . esc_attr($placeholderFontSize) . ';--ktv-placeholder-weight:' . esc_attr($placeholderFontWeight) . ';--ktv-tour-type-price-gap:' . esc_attr($tour_type_price_gap) . 'px;';
 
-    $theme_style = $placeholder_style
+        $theme_style = $placeholder_style
         . '--ktv-bf-submit-bg:' . esc_attr($buttonBgColor) . ';'
         . '--ktv-bf-submit-text:' . esc_attr($buttonBgTextColor) . ';'
         . '--ktv-bf-step-next-bg:' . esc_attr($stepNextBgColor) . ';'
         . '--ktv-bf-step-next-text:' . esc_attr($stepNextTextColor) . ';'
         . '--ktv-bf-step-prev-bg:' . esc_attr($stepPrevBgColor) . ';'
-        . '--ktv-bf-step-prev-text:' . esc_attr($stepPrevTextColor) . ';';
+        . '--ktv-bf-step-prev-text:' . esc_attr($stepPrevTextColor) . ';'
+        . '--ktv-bf-travel-text:' . esc_attr($travelTextColor) . ';'
+        . '--ktv-bf-travel-btn-bg:' . esc_attr($travelBtnBgColor) . ';'
+        . '--ktv-bf-travel-btn-text:' . esc_attr($travelBtnTextColor) . ';'
+        . '--ktv-bf-personal-text:' . esc_attr($personalTextColor) . ';'
+        . '--ktv-bf-personal-btn-bg:' . esc_attr($personalBtnBgColor) . ';'
+        . '--ktv-bf-personal-btn-text:' . esc_attr($personalBtnTextColor) . ';'
+        . '--ktv-bf-payment-text:' . esc_attr($paymentTextColor) . ';'
+        . '--ktv-bf-payment-btn-bg:' . esc_attr($paymentBtnBgColor) . ';'
+        . '--ktv-bf-payment-btn-text:' . esc_attr($paymentBtnTextColor) . ';';
 
     $booking_meta = ktv_get_tour_meta_for_booking(0, array(
         'title'       => $formTitle,
@@ -9147,6 +9318,7 @@ function ktv_render_block_booking_form($attributes) {
     ob_start();
     ?>
     <div class="ktv-booking-multi-step <?php echo esc_attr($widthClass); ?> <?php echo $noBorders ? 'ktv-borderless-form' : ''; ?><?php echo esc_attr($icon_class_suffix); ?>"
+         data-enable-ip-pricing="<?php echo $enableIpPricing ? '1' : '0'; ?>"
          data-enable-modal="<?php echo $enableModal ? 'true' : 'false'; ?>"
          data-modal-title="<?php echo esc_attr($modalTitle); ?>"
          data-modal-subtitle="<?php echo esc_attr($modalSubtitle); ?>"
@@ -9163,10 +9335,10 @@ function ktv_render_block_booking_form($attributes) {
          data-booking-meta-description="<?php echo esc_attr($booking_meta['description']); ?>"
          style="<?php echo esc_attr($theme_style); ?><?php echo esc_attr($borderlessStyle); ?> background:<?php echo esc_attr($formBgColor); ?>; border:<?php echo $noBorders ? 'none' : $borderSize . ' solid ' . $borderColor; ?>; border-radius:<?php echo esc_attr($borderRadius); ?>;">
         <div class="ktv-booking-header">
-            <h3 style="font-size:<?php echo esc_attr($formHeadingSize); ?>; color:<?php echo esc_attr($formHeadingColor); ?>; font-family:<?php echo esc_attr($formHeadingFontFamily); ?>;">
+            <h2 style="font-size:<?php echo esc_attr($formHeadingSize); ?>; color:<?php echo esc_attr($formHeadingColor); ?>; font-family:<?php echo esc_attr($formHeadingFontFamily); ?>;">
                 <?php echo $render_icon('iconTitle') ?: '<i class="fas ' . esc_attr($iconTitle) . '" style="font-size:' . esc_attr($iconTitleSize) . '; color:' . esc_attr($iconTitleColor) . '; margin-right:10px;" aria-hidden="true"></i>'; ?>
                 <?php echo esc_html($formTitle); ?>
-            </h3>
+            </h2>
             <p style="color:<?php echo esc_attr($formTextColor); ?>;"><?php echo esc_html($formSubtitle); ?></p>
             <?php if ($id_document_mandatory || !empty($mandatory['id_document'])): ?>
             <p style="color:#dc3545;font-size:12px;font-weight:600;"><i class="fas fa-exclamation-circle"></i> ID Document is MANDATORY for this booking</p>
@@ -9273,10 +9445,11 @@ function ktv_render_block_booking_form($attributes) {
 
                 <div class="ktv-input-group ktv-price-display-box" style="margin-top:<?php echo esc_attr($tour_type_price_gap); ?>px; margin-bottom:15px; background:#f0f8f0; border:2px solid #28a745; display:flex; align-items:center; gap:12px; padding:10px 15px; border-radius:8px; min-height:52px;">
                     <?php echo $render_icon('priceBoxIcon'); ?>
-                    <span style="font-weight:700; font-size:18px; color:#28a745;">
-                        <?php echo esc_html($currency); ?> <span id="ktv-tour-price-display">0.00</span> <span id="ktv-price-unit-label" class="ktv-price-unit ktv-price-unit--per-day">/ person</span>
+                    <span style="font-weight:700; font-size:18px; color:#1e7e34;">
+                        <?php echo esc_html($currency); ?> <span id="ktv-tour-price-display">0.00</span><span id="ktv-price-unit-label" class="ktv-price-unit" style="display:none;"></span>
                     </span>
                 </div>
+
 
                 <div class="ktv-tour-pax-grid" id="ktv-booking-pax-grid" style="display:none;"></div>
 
@@ -16516,14 +16689,38 @@ function ktv_admin_settings() {
                 'review_modal_title_icon_color' => sanitize_text_field(wp_unslash(isset($_POST['review_modal_title_icon_color']) ? $_POST['review_modal_title_icon_color'] : '#FFD700'))
             );
 
-            foreach ($settings as $key => $value) {
+               foreach ($settings as $key => $value) {
                 ktv_update_setting($key, $value);
             }
+
+            if (isset($_POST['currency_rates_inr_per']) && is_array($_POST['currency_rates_inr_per'])) {
+                $rm = array('INR' => 1.00);
+                foreach (wp_unslash($_POST['currency_rates_inr_per']) as $c => $v) {
+                    $c = strtoupper(sanitize_key($c));
+                    $v = round(floatval($v), 2);
+                    if ($c === '' || $c === 'INR' || $v <= 0) continue;
+                    $rm[$c] = round(1 / $v, 7);
+                }
+                ktv_update_setting('currency_rates_map', wp_json_encode($rm));
+            }
+
+            if (isset($_POST['currency_symbols_map']) && is_array($_POST['currency_symbols_map'])) {
+                $sm = array();
+                foreach (wp_unslash($_POST['currency_symbols_map']) as $c => $v) {
+                    $c = strtoupper(sanitize_key($c));
+                    $v = sanitize_text_field($v);
+                    if ($c !== '' && $v !== '') $sm[$c] = $v;
+                }
+                ktv_update_setting('currency_symbols_map', wp_json_encode($sm));
+            }
+
             ktv_flush_setting_cache();
+            ktv_clear_tour_caches();
 
             echo '<div class="notice notice-success"><p>✅ Settings saved successfully!</p></div>';
-        }
+   }
     }
+
 
     if (isset($_POST['purge_hardcoded_settings'])) {
         if (!wp_verify_nonce(isset($_POST['ktv_admin_nonce']) ? $_POST['ktv_admin_nonce'] : '', 'ktv_admin_action')) {
@@ -16622,8 +16819,9 @@ function ktv_admin_settings() {
     foreach ($rates_map as $code => $mult) {
         $is_inr = ($code === 'INR');
         $mult = floatval($mult);
-        $inr_val = ($is_inr || $mult <= 0) ? 1 : round(1 / $mult, 4);
+        $inr_val = ($is_inr || $mult <= 0) ? '1.00' : number_format(round(1 / $mult, 2), 2, '.', '');
         $sym = isset($symbols_map_saved[$code]) && $symbols_map_saved[$code] !== '' ? $symbols_map_saved[$code] : ktv_get_currency_symbol($code);
+
         $conv = $is_inr ? $sample : ($inr_val > 0 ? round($sample / $inr_val, 2) : 0);
         $lbl = isset($labels[$code]) ? $labels[$code] : $code;
         echo '<div class="ktv-rate-row" style="display:grid;grid-template-columns:56px 56px 1fr 1fr;gap:8px;align-items:center;background:#fff;padding:6px 10px;border-radius:6px;border:1px solid #e8e8e8;" data-code="' . esc_attr($code) . '" data-sample="' . esc_attr($sample) . '">';
@@ -16703,7 +16901,8 @@ function ktv_admin_settings() {
             document.querySelectorAll('.ktv-rate-row').forEach(function(r){
                 var c=r.getAttribute('data-code');if(!c||c==='INR')return;
                 var i=r.querySelector('.ktv-rate-input');if(!i)return;
-                var m=d[c]||1;i.value=m>0?Math.round(10000/m)/10000:1;
+                var m=d[c]||1;i.value=m>0?(Math.round(100/m)/100).toFixed(2):'1.00';
+
                 i.dispatchEvent(new Event('input',{bubbles:true}));
             });
         });
@@ -17654,13 +17853,11 @@ add_action('init', function() {
 /* ============================================================
    75. VERSION LOCK AND BOOT LOG
    ============================================================ */
-
 add_action('admin_init', function() {
     if (!current_user_can('manage_options')) {
         return;
     }
-    $stored = get_option('ktv_travel_version_checked', '');
-    if ($stored !== KTV_TRAVEL_VERSION) {
+    if (get_option('ktv_travel_version_checked', '') !== KTV_TRAVEL_VERSION) {
         update_option('ktv_travel_version_checked', KTV_TRAVEL_VERSION);
     }
 }, 99);
