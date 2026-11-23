@@ -1135,34 +1135,40 @@
             );
         }
 
-        /* ============================================================
+    /* ============================================================
            5. PAX AND ACTIVITY ICON CONTROLS
            ============================================================ */
+
+        function renderPaxIconsPreview(count, size, color) {
+            var icons = [];
+            var total = Math.max(1, Math.min(3, count || 1));
+            for (var i = 0; i < total; i++) {
+                icons.push(el('i', {
+                    key: i,
+                    className: 'fas fa-user',
+                    style: { fontSize: size || '14px', color: color || '#075e54', marginRight: i < total - 1 ? '2px' : '0' }
+                }));
+            }
+            return el('span', { style: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } }, icons);
+        }
 
         function PaxControl(props) {
             var atts = props.attributes;
             var setAtts = props.setAttributes;
             var paxKey = props.paxKey;
             var labelKey = paxKey + 'Label';
-            var iconKey = paxKey + 'Icon';
             var priceKey = paxKey + 'Price';
             var label = props.label || 'Pax';
 
             var isGroupOrFamily = (paxKey === 'group' || paxKey === 'family');
             var maxKey = paxKey + 'MaxPersons';
 
-            return el('div', { style: { marginBottom: '15px', padding: '10px', background: '#f8f9fa', borderRadius: '8px' } },
-                el('h4', { style: { margin: '0 0 10px', fontSize: '13px' } }, label),
+            return el('div', { style: { marginBottom: '12px', padding: '10px', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e0e0e0' } },
+                el('h4', { style: { margin: '0 0 8px', fontSize: '13px', color: '#075e54' } }, label),
                 el(TextControl, {
                     label: 'Label',
                     value: atts[labelKey] || '',
                     onChange: function (v) { var o = {}; o[labelKey] = v; setAtts(o); }
-                }),
-                el(SelectControl, {
-                    label: 'Icon',
-                    value: atts[iconKey] || 'fa-user',
-                    options: paxIconOptions,
-                    onChange: function (v) { var o = {}; o[iconKey] = v; setAtts(o); }
                 }),
                 el(TextControl, {
                     label: 'Price',
@@ -1183,59 +1189,52 @@
             var atts = props.attributes;
             var setAtts = props.setAttributes;
             var visible = parseVisiblePaxToArray(atts.visiblePaxColumns);
+            var activeKey = visible[0] || 'pax1';
 
-            function toggle(key, checked) {
-                var current = visible.slice();
-                var idx = current.indexOf(key);
-                if (checked && idx === -1) {
-                    current.push(key);
-                } else if (!checked && idx !== -1) {
-                    current.splice(idx, 1);
-                }
-                if (current.length === 0) {
-                    current = ['pax1'];
-                }
-                setAtts({ visiblePaxColumns: current.join(',') });
-            }
+            var singlePaxOptions = [
+                { label: '👤 1 Pax (Solo — 1 Icon)', value: 'pax1', adults: 1 },
+                { label: '👥 2 Pax (Couple — 2 Icons)', value: 'pax2', adults: 2 },
+                { label: '👥👤 3 Pax (Triple — 3 Icons)', value: 'pax3', adults: 3 },
+                { label: '👥👤 Group (3 Pax Icons)', value: 'group', adults: 4 },
+                { label: '👥👤 Family (3 Pax Icons)', value: 'family', adults: 4 }
+            ];
 
-            return el(PanelBody, { title: '👥 Pax Columns Visibility', initialOpen: false },
-                el('p', { style: { fontSize: '11px', color: '#666', marginBottom: '10px' } },
-                    'Toggle which pax columns are displayed on the frontend. Default is 1 Pax only. At least one must remain enabled.'
-                ),
-                el('div', { className: 'ktv-pax-columns-toggle' },
-                    paxColumnOptions.map(function (opt) {
-                        var checked = visible.indexOf(opt.key) !== -1;
-                        return el('label', { key: opt.key, style: { opacity: checked ? '1' : '0.55' } },
-                            el('input', {
-                                type: 'checkbox',
-                                checked: checked,
-                                onChange: function (e) { toggle(opt.key, e.target.checked); }
-                            }),
-                            el('i', { className: 'fas ' + opt.icon, style: { marginRight: '4px' } }),
-                            el('span', null, opt.label)
-                        );
-                    })
-                ),
+            return el(PanelBody, { title: '👥 Pax Column & Position', initialOpen: false },
+                el(ToggleControl, {
+                    label: 'Show Pax Column on Block',
+                    checked: atts.showPax !== false,
+                    onChange: function (v) { setAtts({ showPax: v, showPaxColumns: v }); }
+                }),
                 el(SelectControl, {
-                    label: 'Quick Preset',
-                    value: '',
-                    options: [
-                        { label: '— Choose preset —', value: '' },
-                        { label: '🟢 Only 1 Pax (default)', value: 'pax1' },
-                        { label: '👤 1 & 2 Pax', value: 'pax1,pax2' },
-                        { label: '👥 1, 2 & 3 Pax', value: 'pax1,pax2,pax3' },
-                        { label: '🔵 All columns', value: 'all' },
-                        { label: 'Custom (current)', value: 'custom' }
-                    ],
+                    label: 'Active Pax Option (Single Column)',
+                    value: activeKey,
+                    options: singlePaxOptions.map(function (o) { return { label: o.label, value: o.value }; }),
                     onChange: function (v) {
-                        if (!v || v === 'custom') return;
-                        if (v === 'all') {
-                            setAtts({ visiblePaxColumns: 'pax1,pax2,pax3,group,family' });
-                        } else {
-                            setAtts({ visiblePaxColumns: v });
-                        }
+                        var found = singlePaxOptions.filter(function (o) { return o.value === v; })[0];
+                        var nextAdults = found ? found.adults : 1;
+                        setAtts({ visiblePaxColumns: v, defaultAdults: nextAdults });
                     }
-                })
+                }),
+                el(SelectControl, {
+                    label: 'Pax Position in Block',
+                    value: atts.paxPosition || 'before_price',
+                    options: [
+                        { label: 'Top of Card Details', value: 'top' },
+                        { label: 'Right After Title', value: 'after_title' },
+                        { label: 'Before Price (Default)', value: 'before_price' },
+                        { label: 'Bottom (Below Button)', value: 'bottom' }
+                    ],
+                    onChange: function (v) { setAtts({ paxPosition: v }); }
+                }),
+                el(ToggleControl, {
+                    label: 'Show Extra Adult & Extra Child Rates',
+                    checked: atts.showExtraPersonRates === true,
+                    onChange: function (v) { setAtts({ showExtraPersonRates: v }); }
+                }),
+                ColorControl('Pax Box Background', atts.paxBgColor || '#f4f8f6', function (v) { setAtts({ paxBgColor: v }); }),
+                ColorControl('Pax Label Text Color', atts.paxTextColor || '#222222', function (v) { setAtts({ paxTextColor: v }); }),
+                ColorControl('Pax Price Color', atts.paxPriceColor || '#0b5e2b', function (v) { setAtts({ paxPriceColor: v }); }),
+                ColorControl('Pax Icon Color', atts.paxIconColor || '#075e54', function (v) { setAtts({ paxIconColor: v }); })
             );
         }
 
@@ -1261,6 +1260,8 @@
                 })
             );
         }
+
+
 
         /* ============================================================
            6. FIELD ICON CONTROL
@@ -1368,7 +1369,7 @@
             );
         }
 
-        /* ============================================================
+                /* ============================================================
            7. MISC CONTROLS
            ============================================================ */
 
@@ -1484,7 +1485,9 @@
                     label: 'Show GST Badge',
                     checked: atts.showGst !== undefined ? atts.showGst : true,
                     onChange: function (v) { setAtts({ showGst: v }); }
-                })
+                }),
+                ColorControl('GST Badge Background', atts.gstBgColor || '#fff3e0', function (v) { setAtts({ gstBgColor: v }); }),
+                ColorControl('GST Badge Text Color', atts.gstTextColor || '#9a3b00', function (v) { setAtts({ gstTextColor: v }); })
             );
         }
 
@@ -1505,13 +1508,13 @@
                     options: fontWeightOptions,
                     onChange: function (v) { setAtts({ placeholderFontWeight: v }); }
                 }),
-                ColorControl('Placeholder Color', atts.placeholderColor || '#999999', function (v) { setAtts({ placeholderColor: v }); })
+                ColorControl('Placeholder Color', atts.placeholderColor || '#595959', function (v) { setAtts({ placeholderColor: v }); })
             );
         }
 
         function MediaUploadControl(imageId, onChange, label, imageLink, onLinkChange, imageSize, onSizeChange) {
             return el('div', { style: { marginBottom: '12px' } },
-                el('p', { style: { fontSize: '11px', color: '#666', marginBottom: '8px' } },
+                el('p', { style: { fontSize: '11px', color: '#4a4a4a', marginBottom: '8px' } },
                     imageId ? (label || 'Image') + ' (ID: ' + imageId + ')' : 'No ' + (label || 'image') + ' selected'
                 ),
                 el(MediaUploadCheck, {},
@@ -1531,7 +1534,7 @@
                     label: 'Image Link URL',
                     value: imageLink || '',
                     onChange: function (v) { if (onLinkChange) onLinkChange(v); },
-                    placeholder: 'https://example.com/page'
+                    placeholder: 'https://example.com'
                 }) : null,
                 imageSize !== undefined && imageSize !== null ? el(SelectControl, {
                     label: 'Image Display Size',
@@ -1541,24 +1544,45 @@
                 }) : null
             );
         }
-
         function GalleryControl(props) {
             var atts = props.attributes;
             var setAtts = props.setAttributes;
 
-            return el(PanelBody, { title: '🖼️ Gallery Settings', initialOpen: false },
+            return el(PanelBody, { title: '🖼️ Gallery Slider (URLs or Media IDs)', initialOpen: false },
+                el(MediaUploadCheck, {},
+                    el(MediaUpload, {
+                        multiple: true,
+                        gallery: true,
+                        allowedTypes: ['image'],
+                        onSelect: function (items) {
+                            if (!items || !items.length) return;
+                            var urls = items.map(function (m) { return m.url || m.id; }).filter(Boolean);
+                            var existing = (atts.galleryImages || '').trim();
+                            var combined = existing ? (existing + ',' + urls.join(',')) : urls.join(',');
+                            setAtts({ galleryImages: combined });
+                        },
+                        render: function (obj) {
+                            return el(Button, {
+                                onClick: obj.open,
+                                variant: 'secondary',
+                                style: { width: '100%', marginBottom: '8px', justifyContent: 'center' }
+                            }, '🖼️ Pick Gallery Images from Library');
+                        }
+                    })
+                ),
                 el(TextareaControl, {
-                    label: 'Gallery Images (comma separated IDs)',
+                    label: 'Gallery Image URLs or IDs (comma separated)',
                     value: atts.galleryImages || '',
+                    rows: 3,
                     onChange: function (v) { setAtts({ galleryImages: v }); },
-                    placeholder: '123,456,789'
+                    placeholder: 'https://example.com, https://example.com'
                 }),
                 el(ToggleControl, {
                     label: 'Auto Slide Gallery',
-                    checked: atts.galleryAutoSlide || false,
+                    checked: atts.galleryAutoSlide !== undefined ? atts.galleryAutoSlide : true,
                     onChange: function (v) { setAtts({ galleryAutoSlide: v }); }
                 }),
-                atts.galleryAutoSlide ? el(RangeControl, {
+                atts.galleryAutoSlide !== false ? el(RangeControl, {
                     label: 'Slide Interval (ms)',
                     value: atts.gallerySlideInterval || 3000,
                     onChange: function (v) { setAtts({ gallerySlideInterval: v }); },
@@ -1577,7 +1601,7 @@
                     label: 'Button URL',
                     value: atts.buttonUrl || '#',
                     onChange: function (v) { setAtts({ buttonUrl: v }); },
-                    placeholder: 'https://example.com/booking'
+                    placeholder: 'https://example.com'
                 })
             );
         }
@@ -1617,7 +1641,7 @@
                         onChange: function (v) { setAtts({ iconSize: v }); }
                     })
                 ) : null,
-                globalDark ? el('p', { style: { fontSize: '11px', color: '#666', fontStyle: 'italic' } }, '🌙 Dark mode is globally enabled in KTV Settings.') : null,
+                globalDark ? el('p', { style: { fontSize: '11px', color: '#4a4a4a', fontStyle: 'italic' } }, '🌙 Dark mode is globally enabled in KTV Settings.') : null,
                 el(ToggleControl, {
                     label: 'Enable Dark Mode for this block',
                     checked: atts.darkMode === true,
@@ -1630,18 +1654,44 @@
             var atts = props.attributes;
             var setAtts = props.setAttributes;
             var enabled = atts.enableIpPricing === undefined ? true : atts.enableIpPricing;
-            return el(PanelBody, { title: '💱 Currency', initialOpen: false },
-                el('p', { style: { fontSize: '11px', color: '#666', marginBottom: '10px' } },
-                    'When IP-based pricing is enabled, prices are converted to the visitor country currency using the currency rates configured in KTV Settings. Disable to always show prices in the manual currency from KTV Settings.'
+            return el(PanelBody, { title: '💱 IP Pricing & Currency Rates', initialOpen: false },
+                el('p', { style: { fontSize: '11px', color: '#4a4a4a', marginBottom: '10px' } },
+                    'Enable IP-based currency conversion for this block or customize the currency symbol and exchange rate.'
                 ),
                 el(ToggleControl, {
                     label: 'Enable IP-Based Prices for this block',
                     checked: enabled,
                     onChange: function (v) { setAtts({ enableIpPricing: v }); }
+                }),
+                el(SelectControl, {
+                    label: 'Currency Symbol Override (Optional)',
+                    value: atts.customCurrencySymbol || '',
+                    options: [
+                        { label: 'Auto (IP / Site Default)', value: '' },
+                        { label: '$ (USD)', value: '$' },
+                        { label: '₹ (INR)', value: '₹' },
+                        { label: '€ (EUR)', value: '€' },
+                        { label: '£ (GBP)', value: '£' },
+                        { label: 'د.إ (AED)', value: 'د.إ' },
+                        { label: '﷼ (SAR)', value: '﷼' },
+                        { label: 'A$ (AUD)', value: 'A$' },
+                        { label: 'C$ (CAD)', value: 'C$' },
+                        { label: 'S$ (SGD)', value: 'S$' },
+                        { label: 'RM (MYR)', value: 'RM' }
+                    ],
+                    onChange: function (v) { setAtts({ customCurrencySymbol: v }); }
+                }),
+                el(TextControl, {
+                    label: 'Custom Exchange Rate from INR (0 = Use KTV Settings)',
+                    type: 'number',
+                    step: '0.0001',
+                    value: atts.customCurrencyRate || 0,
+                    onChange: function (v) { setAtts({ customCurrencyRate: parseFloat(v) || 0 }); },
+                    help: 'Example: 0.0120 converts 1000 INR to $12.00. Set 0 to use automatic IP rates.'
                 })
             );
         }
-
+        
         /* ============================================================
            8. AJAX TOUR PERSISTENCE
            ============================================================ */
@@ -2023,10 +2073,12 @@
                     if ((col.key === 'group' || col.key === 'family') && atts[maxKey] > 0) {
                         labelText += ' (up to ' + atts[maxKey] + ')';
                     }
+                                        var iconCount = col.key === 'pax1' ? 1 : (col.key === 'pax2' ? 2 : 3);
                     paxPreviewItems.push({
                         label: labelText,
                         price: atts[priceKey] || 0,
-                        icon: atts[iconKey] || col.icon
+                        icon: atts[iconKey] || col.icon,
+                        count: iconCount
                     });
                 });
 
@@ -2378,13 +2430,14 @@
                                     className: 'ktv-tour-pax-grid',
                                     style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '8px', marginBottom: '12px', fontSize: '12px', textAlign: 'center', background: '#f8f9fa', padding: '10px', borderRadius: '8px' }
                                 },
-                                    paxPreviewItems.map(function (p, i) {
+                                 paxPreviewItems.map(function (p, i) {
                                         return el('div', { className: 'ktv-pax-item', key: i },
-                                            el('i', { className: 'fas ' + (p.icon || 'fa-user'), style: { fontSize: atts.iconSize, color: atts.iconColor, display: 'block', marginBottom: '4px' } }),
+                                            renderPaxIconsPreview(p.count || 1, atts.iconSize, atts.iconColor),
                                             el('span', { style: { display: 'block', color: '#666', marginBottom: '2px' } }, p.label),
                                             el('strong', { style: { display: 'block', color: '#28a745', fontSize: '13px' } }, cs + (p.price || 0))
                                         );
                                     })
+
                                 ) : null,
                                 atts.showReviews ? el('div', {
                                     className: 'ktv-tour-reviews-mini ktv-review-clickable',
@@ -4576,7 +4629,20 @@
                 stepNextTextColor: { type: 'string', default: '#ffffff' },
                 stepPrevBgColor: { type: 'string', default: '#6c757d' },
                 stepPrevTextColor: { type: 'string', default: '#ffffff' },
+                travelTextColor: { type: 'string', default: '#222222' },
+                travelBtnBgColor: { type: 'string', default: '#1e7e34' },
+                travelBtnTextColor: { type: 'string', default: '#ffffff' },
+                personalTextColor: { type: 'string', default: '#222222' },
+                personalBtnBgColor: { type: 'string', default: '#1e7e34' },
+                personalBtnTextColor: { type: 'string', default: '#ffffff' },
+                paymentTextColor: { type: 'string', default: '#222222' },
+                paymentBtnBgColor: { type: 'string', default: '#075e54' },
+                paymentBtnTextColor: { type: 'string', default: '#ffffff' },
+                enableIpPricing: { type: 'boolean', default: true },
+                customCurrencySymbol: { type: 'string', default: '' },
+                customCurrencyRate: { type: 'number', default: 0 },
                 buttonText: { type: 'string', default: 'Confirm Booking' },
+
                 borderColor: { type: 'string', default: '#e0e0e0' },
                 borderSize: { type: 'string', default: '1px' },
                 borderRadius: { type: 'string', default: '12px' },
@@ -4952,10 +5018,26 @@
                     );
                 }
 
-                return el(Fragment, {},
+                    return el(Fragment, {},
                     el(InspectorControls, { key: 'inspector' },
                         BlockIconPanel({ attributes: atts, setAttributes: setAtts }),
+                        CurrencyIpPanel({ attributes: atts, setAttributes: setAtts }),
+                        el(PanelBody, { title: '🎨 Multi-Step Section Colors (Travel / Personal / Payment)', initialOpen: false },
+                            el('h4', { style: { margin: '8px 0 6px', fontSize: '12px', color: '#075e54' } }, 'Step 1 — Travel Section'),
+                            ColorControl('Travel Text Color', atts.travelTextColor || '#222222', function (v) { setAtts({ travelTextColor: v }); }),
+                            ColorControl('Travel Button Background', atts.travelBtnBgColor || '#1e7e34', function (v) { setAtts({ travelBtnBgColor: v }); }),
+                            ColorControl('Travel Button Text Color', atts.travelBtnTextColor || '#ffffff', function (v) { setAtts({ travelBtnTextColor: v }); }),
+                            el('h4', { style: { margin: '12px 0 6px', fontSize: '12px', color: '#075e54' } }, 'Step 2 — Personal Section'),
+                            ColorControl('Personal Text Color', atts.personalTextColor || '#222222', function (v) { setAtts({ personalTextColor: v }); }),
+                            ColorControl('Personal Button Background', atts.personalBtnBgColor || '#1e7e34', function (v) { setAtts({ personalBtnBgColor: v }); }),
+                            ColorControl('Personal Button Text Color', atts.personalBtnTextColor || '#ffffff', function (v) { setAtts({ personalBtnTextColor: v }); }),
+                            el('h4', { style: { margin: '12px 0 6px', fontSize: '12px', color: '#075e54' } }, 'Step 3 — Payment Section'),
+                            ColorControl('Payment Text Color', atts.paymentTextColor || '#222222', function (v) { setAtts({ paymentTextColor: v }); }),
+                            ColorControl('Payment Button Background', atts.paymentBtnBgColor || '#075e54', function (v) { setAtts({ paymentBtnBgColor: v }); }),
+                            ColorControl('Payment Button Text Color', atts.paymentBtnTextColor || '#ffffff', function (v) { setAtts({ paymentBtnTextColor: v }); })
+                        ),
                         el(PanelBody, { title: '📝 Form Settings', initialOpen: true },
+
                             el(TextControl, { label: 'Form Title', value: atts.formTitle, onChange: function (v) { setAtts({ formTitle: v }); } }),
                             el(TextControl, { label: 'Subtitle', value: atts.formSubtitle, onChange: function (v) { setAtts({ formSubtitle: v }); } }),
                             el(TextControl, { label: 'Button Text', value: atts.buttonText, onChange: function (v) { setAtts({ buttonText: v }); } }),
@@ -5170,10 +5252,11 @@
                             }, borderStyle)
                         },
                             protectionBadge,
-                            el('h3', { style: { textAlign: 'center', marginBottom: '10px', fontSize: atts.formHeadingSize, color: atts.formHeadingColor, fontFamily: atts.formHeadingFontFamily } },
+                            el('h2', { style: { textAlign: 'center', marginBottom: '10px', fontSize: atts.formHeadingSize, color: atts.formHeadingColor, fontFamily: atts.formHeadingFontFamily } },
                                 atts.enableIcon !== false ? el('i', { className: 'fas ' + atts.iconTitle, style: { fontSize: atts.iconTitleSize, color: atts.iconTitleColor, marginRight: '10px' } }) : null,
                                 ' ' + atts.formTitle
                             ),
+
                             el('p', { style: { textAlign: 'center', color: atts.formTextColor, marginBottom: '20px' } }, atts.formSubtitle),
                             el('div', {
                                 style: { padding: '15px', background: '#f8f9fa', borderRadius: '8px', textAlign: 'center', color: '#666', marginBottom: '15px' }
