@@ -114,12 +114,12 @@
         return '';
     }
 
+    var _escapeMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
     function escapeHtml(str) {
         if (!str) return '';
-        var div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
+        return String(str).replace(/[&<>"']/g, function (ch) { return _escapeMap[ch]; });
     }
+
 
     function timeAgo(datetimeStr) {
         if (!datetimeStr) return '';
@@ -154,15 +154,12 @@
             });
         });
     }
-
     function slideUp(el, duration) {
         if (!el) return;
         duration = duration || 300;
-        el.style.overflow = 'hidden';
-        el.style.height = '';
-        var height = 0;
+        var height = el.scrollHeight;
         requestAnimationFrame(function () {
-            height = el.scrollHeight;
+            el.style.overflow = 'hidden';
             el.style.height = height + 'px';
             requestAnimationFrame(function () {
                 el.style.transition = 'height ' + duration + 'ms ease';
@@ -177,12 +174,16 @@
         });
     }
 
+
     function animateScrollTo(target, offset) {
         if (!target) return;
         offset = offset || 100;
-        var targetPos = target.getBoundingClientRect().top + window.pageYOffset - offset;
-        window.scrollTo({ top: targetPos, behavior: 'smooth' });
+        requestAnimationFrame(function () {
+            var targetPos = target.getBoundingClientRect().top + window.pageYOffset - offset;
+            window.scrollTo({ top: targetPos, behavior: 'smooth' });
+        });
     }
+
 
     function triggerEvent(el, eventName) {
         if (!el) return;
@@ -393,6 +394,17 @@
         return '$';
     }
 
+        function getNormalizedRate(code) {
+        var cfg = window.ktvTravelConfig || {};
+        var rates = cfg.currencyRates || {};
+        var r = parseFloat(rates[code]);
+        if (!r || r <= 0) return 0;
+        if (code !== 'INR' && code !== 'JPY' && code !== 'KRW' && code !== 'VND' && code !== 'IDR' && r > 5) {
+            return 1 / r;
+        }
+        return r;
+    }
+
     function convertPrice(amount) {
         var n = parseFloat(amount) || 0;
         if (n <= 0) return n;
@@ -400,9 +412,10 @@
         var to   = cfg.currencyCode  || 'USD';
         var base = cfg.baseCurrency  || 'INR';
         if (to === base) return Math.round(n * 100) / 100;
-        var rates = cfg.currencyRates || {};
-        if (!rates[to] || !rates[base] || rates[base] <= 0) return Math.round(n * 100) / 100;
-        return Math.round(n * (rates[to] / rates[base]) * 100) / 100;
+        var toRate   = getNormalizedRate(to);
+        var baseRate = getNormalizedRate(base) || 1;
+        if (!toRate || toRate <= 0) return Math.round(n * 100) / 100;
+        return Math.round(n * (toRate / baseRate) * 100) / 100;
     }
 
     function toBaseCurrency(amount) {
@@ -412,10 +425,11 @@
         var from = cfg.currencyCode || 'USD';
         var base = cfg.baseCurrency || 'INR';
         if (from === base) return Math.round(n * 100) / 100;
-        var rates = cfg.currencyRates || {};
-        if (!rates[from] || rates[from] <= 0) return Math.round(n * 100) / 100;
-        return Math.round((n / rates[from]) * 100) / 100;
+        var fromRate = getNormalizedRate(from);
+        if (!fromRate || fromRate <= 0) return Math.round(n * 100) / 100;
+        return Math.round((n / fromRate) * 100) / 100;
     }
+
 
     /* ============================================================
        3. GLOBAL CONFIG
@@ -430,11 +444,13 @@
             (typeof ktv_travel !== 'undefined' && ktv_travel.currency_symbol) ? ktv_travel.currency_symbol : ''
         ),
         currencyCode: (typeof ktv_travel !== 'undefined' && ktv_travel.currency_code) ? ktv_travel.currency_code : 'USD',
+        currencySymbols: (typeof ktv_travel !== 'undefined' && ktv_travel.currency_symbols) ? ktv_travel.currency_symbols : {},
         currencyRates: (typeof ktv_travel !== 'undefined' && ktv_travel.currency_rates) ? ktv_travel.currency_rates : {
-            'USD': 1.0, 'EUR': 0.0110, 'GBP': 0.0094, 'INR': 94.27, 'AUD': 0.0182,
-            'CAD': 0.0163, 'JPY': 1.80, 'AED': 0.0441, 'SAR': 0.0450,
+            'INR': 1.0, 'USD': 0.0120, 'EUR': 0.0111, 'GBP': 0.0095, 'AUD': 0.0183,
+            'CAD': 0.0164, 'JPY': 1.80, 'AED': 0.0441, 'SAR': 0.0450,
             'SGD': 0.0161, 'MYR': 0.0567
         },
+
         baseCurrency: (typeof ktv_travel !== 'undefined' && ktv_travel.base_currency) ? ktv_travel.base_currency : 'INR',
         upiId: (typeof ktv_travel !== 'undefined' && ktv_travel.upi_id) ? ktv_travel.upi_id : '7006838859@okbizaxis',
         gpayNumber: (typeof ktv_travel !== 'undefined' && ktv_travel.gpay_number) ? ktv_travel.gpay_number : '',
@@ -1507,23 +1523,29 @@
         var familyLabel = selectedOption.getAttribute('data-family-label') || 'Family';
 
         var cols = [
-            { key: 'pax1', label: pax1Label, icon: pax1Icon, attr: 'data-pax1' },
-            { key: 'pax2', label: pax2Label, icon: pax2Icon, attr: 'data-pax2' },
-            { key: 'pax3', label: pax3Label, icon: pax3Icon, attr: 'data-pax3' },
-            { key: 'group', label: groupLabel, icon: groupIcon, attr: 'data-group' },
-            { key: 'family', label: familyLabel, icon: familyIcon, attr: 'data-family' }
+            { key: 'pax1', label: pax1Label, icon: pax1Icon, attr: 'data-pax1', count: 1 },
+            { key: 'pax2', label: pax2Label, icon: pax2Icon, attr: 'data-pax2', count: 2 },
+            { key: 'pax3', label: pax3Label, icon: pax3Icon, attr: 'data-pax3', count: 3 },
+            { key: 'group', label: groupLabel, icon: groupIcon, attr: 'data-group', count: 3 },
+            { key: 'family', label: familyLabel, icon: familyIcon, attr: 'data-family', count: 3 }
         ];
         var html = '';
         cols.forEach(function (c) {
             if (visible.indexOf(c.key) === -1) return;
             var val = parseFloat(selectedOption.getAttribute(c.attr)) || 0;
             if (val <= 0) return;
+            var iconsHtml = '<span class="ktv-pax-icons-group">';
+            for (var ic = 0; ic < c.count; ic++) {
+                iconsHtml += '<i class="fas ' + escapeHtml(c.icon) + '" aria-hidden="true"></i>';
+            }
+            iconsHtml += '</span>';
             html += '<div class="ktv-pax-item" style="text-align:center;font-size:12px;">'
-                + '<i class="fas ' + c.icon + '" style="display:block;margin-bottom:4px;"></i>'
-                + '<span style="display:block;color:#666;margin-bottom:2px;">' + c.label + '</span>'
+                + iconsHtml
+                + '<span style="display:block;color:#666;margin-bottom:2px;">' + escapeHtml(c.label) + '</span>'
                 + '<strong style="color:#28a745;font-size:13px;">' + currency + Math.round(val) + '</strong>'
                 + '</div>';
         });
+
 
         if (selectedOption.getAttribute('data-show-extra-person-rates') === '1') {
             var extraA = parseFloat(selectedOption.getAttribute('data-extra-adult')) || 0;
@@ -2097,11 +2119,12 @@
                 '          <div class="ktv-input-group"><i class="fas fa-key"></i><input type="text" name="card_pin" placeholder="PIN" autocomplete="off"></div>' +
                 '        </div>') : '';
 
-            var modalHtml = ''
+                var modalHtml = ''
                 + '<div id="' + modalId + '" class="ktv-modal-overlay' + modalAnimClass + '" role="dialog" aria-modal="true">'
                 + '  <div class="ktv-modal-container' + modalWidthClass + '">'
                 + '    <div class="ktv-modal-header">'
-                + '      <h3><i class="fas fa-calendar-alt"></i> ' + escapeHtml(modalTitle) + '</h3>'
+                + '      <h2><i class="fas fa-calendar-alt"></i> ' + escapeHtml(modalTitle) + '</h2>'
+
                 + '      <button class="ktv-modal-close" data-close-modal="' + modalId + '" aria-label="Close">&times;</button>'
                 + '    </div>'
                 + '    <div class="ktv-modal-body">'
@@ -2972,7 +2995,10 @@
        ============================================================ */
 
     function ktvGlobalClickRouter(e) {
+        if (!e.target || !e.target.closest) return;
+        if (!e.target.closest('[class*="ktv-"], [data-open-modal], .ktv-modal-overlay')) return;
         var gpayBtn = e.target.closest('.ktv-gpay-pay-btn, .ktv-upi-app-btn.google-pay');
+
         if (gpayBtn) {
             if (gpayBtn.closest('.ktv-modal-overlay')) {
             } else {
@@ -3918,31 +3944,32 @@
         var extraChild = extraChildPrice > 0 ? extraChildPrice : basePerPerson * (extraChildPct / 100);
 
         var displayPrice;
-        if (showComplete && !showPerDay) {
+        if (showComplete || basis === 'total') {
             if (basis === 'total') {
                 displayPrice = basePerPerson + (extraAdult * Math.max(0, adultCount - 1)) + (extraChild * childCount);
             } else {
                 displayPrice = (basePerPerson + (extraAdult * Math.max(0, adultCount - 1)) + (extraChild * childCount)) * nightCount;
             }
-            if (priceUnitLabel) {
-                priceUnitLabel.textContent = '/ total';
-                priceUnitLabel.className = 'ktv-price-unit ktv-price-unit--complete';
-            }
         } else {
             displayPrice = basePerPerson + (extraAdult * Math.max(0, adultCount - 1)) + (extraChild * childCount);
-            if (priceUnitLabel) {
-                priceUnitLabel.textContent = '/ day';
-                priceUnitLabel.className = 'ktv-price-unit ktv-price-unit--per-day';
-            }
         }
+        if (priceUnitLabel) {
+            priceUnitLabel.textContent = '';
+            priceUnitLabel.style.display = 'none';
+        }
+
 
         priceDisplay.textContent = displayPrice.toFixed(2);
 
         var tourPriceInput = form.querySelector('input[name="tour_price"]');
         if (tourPriceInput) tourPriceInput.value = effectiveDisplayPrice;
 
+        if (enableIp && ktvConfig.currencyCode && ktvConfig.currencyCode !== ktvConfig.baseCurrency) {
+            displayPrice = convertPrice(displayPrice);
+        }
         var sym = enableIp ? (selectedOption.getAttribute('data-currency-symbol') || ktvConfig.currencySymbol) : resolveCurrencySymbol(ktvConfig.baseCurrency || 'INR', '');
         if (sym) {
+
             var priceBoxSpan = form.querySelector('.ktv-price-display-box span');
             if (priceBoxSpan && priceBoxSpan.firstChild && priceBoxSpan.firstChild.nodeType === 3) {
                 priceBoxSpan.firstChild.textContent = sym + ' ';
@@ -4248,15 +4275,19 @@
        23. FLATPICKR DATE PICKERS
        ============================================================ */
 
-    function initDatePickers() {
+       function initDatePickers() {
+        var inputs = $$('.ktv-datepicker');
+        if (!inputs.length) return;
         if (typeof flatpickr === 'undefined') {
             var script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/flatpickr';
+            script.src = 'https://jsdelivr.net';
             script.onload = function () { setTimeout(initDatePickers, 100); };
             document.head.appendChild(script);
             return;
         }
-        $$('.ktv-datepicker').forEach(function (input) {
+
+        var altInputs = [];
+        inputs.forEach(function (input) {
             if (input._flatpickr) return;
             var isArrival = input.name === 'arrival_date';
             flatpickr(input, {
@@ -4275,10 +4306,17 @@
                 }
             });
             if (input._flatpickr && input._flatpickr.altInput) {
-                input._flatpickr.altInput.style.width = '100%';
-                input._flatpickr.altInput.style.minWidth = '0';
+                altInputs.push(input._flatpickr.altInput);
             }
         });
+        if (altInputs.length) {
+            requestAnimationFrame(function () {
+                for (var i = 0; i < altInputs.length; i++) {
+                    altInputs[i].style.width = '100%';
+                    altInputs[i].style.minWidth = '0';
+                }
+            });
+        }
     }
 
     /* ============================================================
@@ -4514,12 +4552,24 @@
                 touchDiffX = 0;
             }, { passive: true });
 
+                var isInViewport = true;
             container.addEventListener('mouseenter', function () { if (autoplay) stopAutoplay(); });
-            container.addEventListener('mouseleave', function () { if (autoplay) startAutoplay(); });
+
 
             goToSlide(0, false);
 
-            if (autoplay && total > 1) setTimeout(startAutoplay, 500);
+            if (autoplay && total > 1) {
+                if ('IntersectionObserver' in window) {
+                    var io = new IntersectionObserver(function (entries) {
+                        isInViewport = entries[0].isIntersecting;
+                        if (isInViewport) startAutoplay();
+                        else stopAutoplay();
+                    }, { threshold: 0.1 });
+                    io.observe(container);
+                } else {
+                    setTimeout(startAutoplay, 500);
+                }
+            }
         });
     }
 
@@ -5667,6 +5717,8 @@
     function initWishlist() {
         $$('.ktv-wishlist-btn').forEach(function (btn) {
             var inWishlist = btn.getAttribute('data-in-wishlist') === '1';
+            var hasActive = hasClass(btn, 'active');
+            if (inWishlist === hasActive) return;
             var icon = btn.querySelector('i');
             if (inWishlist) {
                 addClass(btn, 'active');
@@ -5677,6 +5729,7 @@
             }
         });
     }
+
 
     /* ============================================================
        34. FETCH WISHLIST COUNTS
@@ -6023,10 +6076,41 @@
             function startAutoplay() { if (autoSlide && total > 1) { stopAutoplay(); timer = setInterval(nextSlide, interval); } }
             function stopAutoplay() { if (timer) { clearInterval(timer); timer = null; } }
 
+            if (!container.querySelector('.ktv-gallery-prev')) {
+                var prevBtn = document.createElement('button');
+                prevBtn.type = 'button';
+                prevBtn.className = 'ktv-gallery-prev';
+                prevBtn.setAttribute('aria-label', 'Previous image');
+                prevBtn.innerHTML = '<i class="fas fa-chevron-left" aria-hidden="true"></i>';
+                prevBtn.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); goToSlide(current - 1); });
+
+                var nextBtn = document.createElement('button');
+                nextBtn.type = 'button';
+                nextBtn.className = 'ktv-gallery-next';
+                nextBtn.setAttribute('aria-label', 'Next image');
+                nextBtn.innerHTML = '<i class="fas fa-chevron-right" aria-hidden="true"></i>';
+                nextBtn.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); nextSlide(); });
+
+                container.appendChild(prevBtn);
+                container.appendChild(nextBtn);
+            }
+
+            var galleryVisible = true;
             container.addEventListener('mouseenter', stopAutoplay);
-            container.addEventListener('mouseleave', startAutoplay);
+            container.addEventListener('mouseleave', function () { if (galleryVisible) startAutoplay(); });
             goToSlide(0);
-            startAutoplay();
+            if (autoSlide && 'IntersectionObserver' in window) {
+                var gObserver = new IntersectionObserver(function (entries) {
+                    galleryVisible = entries[0].isIntersecting;
+                    if (galleryVisible) startAutoplay();
+                    else stopAutoplay();
+                }, { threshold: 0.1 });
+                gObserver.observe(container);
+            } else {
+                startAutoplay();
+            }
+
+
 
             var touchStartX = 0;
             container.addEventListener('touchstart', function (e) {
@@ -6782,10 +6866,12 @@
         initAccountPages();
 
         updateGridColumns();
-        window.addEventListener('resize', updateGridColumns);
+        window.addEventListener('resize', updateGridColumns, { passive: true });
 
-        updateAllTimeAgo();
-        setInterval(updateAllTimeAgo, 60000);
+        if (document.querySelector('.ktv-last-booking')) {
+            setInterval(updateAllTimeAgo, 60000);
+        }
+
 
         initEasyTyping();
         initModalAnimations();
@@ -7163,7 +7249,9 @@
                         if (sortKey === 'newest')     return cardId(b) - cardId(a);
                         return 0;
                     });
-                    inParent.forEach(function (c) { parent.appendChild(c); });
+                                        var frag = document.createDocumentFragment();
+                  inParent.forEach(function (c) { frag.appendChild(c); });
+                    parent.appendChild(frag);
                 });
             }
 
@@ -7172,32 +7260,16 @@
             updateActiveBadge(activeCount);
         }
 
-        [durationSel, priceSel, sortSel, ratingSel, activitiesSel, groupSel, hotelsSel, boatSel, mealsSel, flightSel].forEach(function (el) {
-            if (!el) return;
-            var clone = el.cloneNode(true);
-            el.parentNode.replaceChild(clone, el);
-        });
-
-        durationSel   = filter.querySelector('.ktv-filter-duration');
-        priceSel      = filter.querySelector('.ktv-filter-price');
-        sortSel       = filter.querySelector('.ktv-filter-sort');
-        ratingSel     = filter.querySelector('.ktv-filter-rating');
-        activitiesSel = filter.querySelector('.ktv-filter-activities');
-        groupSel      = filter.querySelector('.ktv-filter-group');
-        hotelsSel     = filter.querySelector('.ktv-filter-hotels');
-        boatSel       = filter.querySelector('.ktv-filter-boat');
-        mealsSel      = filter.querySelector('.ktv-filter-meals');
-        flightSel     = filter.querySelector('.ktv-filter-flight');
-
-        [durationSel, priceSel, sortSel, ratingSel, activitiesSel, groupSel, hotelsSel, boatSel, mealsSel, flightSel].forEach(function (el) {
-            if (el) el.addEventListener('change', applyFilters);
+            [durationSel, priceSel, sortSel, ratingSel, activitiesSel, groupSel, hotelsSel, boatSel, mealsSel, flightSel].forEach(function (el) {
+            if (el && !el.dataset.ktvBound) {
+                el.dataset.ktvBound = '1';
+                el.addEventListener('change', applyFilters);
+            }
         });
 
         filter.querySelectorAll('.ktv-quick-chip').forEach(function (chip) {
-            var clone = chip.cloneNode(true);
-            chip.parentNode.replaceChild(clone, chip);
-        });
-        filter.querySelectorAll('.ktv-quick-chip').forEach(function (chip) {
+            if (chip.dataset.ktvBound) return;
+            chip.dataset.ktvBound = '1';
             chip.addEventListener('click', function () {
                 var key = this.getAttribute('data-quick');
                 quick = (quick === key) ? '' : key;
@@ -7208,10 +7280,8 @@
             });
         });
 
-        if (resetBtn) {
-            var rClone = resetBtn.cloneNode(true);
-            resetBtn.parentNode.replaceChild(rClone, resetBtn);
-            resetBtn = rClone;
+        if (resetBtn && !resetBtn.dataset.ktvBound) {
+            resetBtn.dataset.ktvBound = '1';
             resetBtn.addEventListener('click', function () {
                 quick = '';
                 filter.querySelectorAll('select').forEach(function (s) { s.selectedIndex = 0; });
@@ -7220,7 +7290,11 @@
             });
         }
 
-        applyFilters();
+        var initialCards = document.querySelectorAll('.ktv-tour-card[data-tour-id], .ktv-tour-package-card[data-tour-id]');
+        if (countEl) countEl.textContent = initialCards.length;
+        if (resetBtn) resetBtn.hidden = true;
+        updateActiveBadge(0);
+
     }
 
     window.ktvInitTourFilter = initTourFilter;
