@@ -11,24 +11,40 @@
    ============================================================ */
 
 :root {
-    --ktv-primary: #28a745;
-    --ktv-primary-dark: #218838;
+    --ktv-primary: #1e7e34;
+    --ktv-primary-dark: #155d27;
     --ktv-secondary: #075e54;
-    --ktv-danger: #dc3545;
-    --ktv-warning: #ffc107;
-    --ktv-dark: #333;
+    --ktv-danger: #b71c1c;
+    --ktv-warning: #9a6700;
+    --ktv-dark: #222222;
     --ktv-light: #f8f9fa;
-    --ktv-border: #e0e0e0;
+    --ktv-border: #d6d6d6;
+    --ktv-old-price-color: #595959;
+    --ktv-offer-price-color: #1e7e34;
+    --ktv-day-badge-bg: #111111;
+    --ktv-day-badge-text: #ffffff;
+    --ktv-pax-bg: #f4f8f6;
+    --ktv-pax-text: #222222;
+    --ktv-pax-price: #0b5e2b;
+    --ktv-bf-travel-btn-bg: #1e7e34;
+    --ktv-bf-travel-btn-text: #ffffff;
+    --ktv-bf-personal-btn-bg: #1e7e34;
+    --ktv-bf-personal-btn-text: #ffffff;
+    --ktv-bf-payment-btn-bg: #075e54;
+    --ktv-bf-payment-btn-text: #ffffff;
+    --ktv-bf-travel-text: #222222;
+    --ktv-bf-personal-text: #222222;
+    --ktv-bf-payment-text: #222222;
     --ktv-shadow: 0 10px 40px rgba(0,0,0,0.08);
     --ktv-shadow-hover: 0 15px 40px rgba(0,0,0,0.12);
-    --ktv-transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --ktv-transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --ktv-star-color: #FFD700;
     --ktv-body-font: 'Tahoma','Segoe UI',Arial,sans-serif;
     --ktv-heading-font: 'Tahoma',inherit;
     --ktv-radius: 12px;
     --ktv-radius-xl: 16px;
     --ktv-radius-full: 30px;
-    --ktv-gst-color: #c2410c;
+    --ktv-gst-color: #7c2d12;
     --ktv-gst-bg: #fff3e0;
     --ktv-form-compact-max: 600px;
     --ktv-form-wide-max: 900px;
@@ -144,6 +160,7 @@
 }
 
 .ktv-tour-grid-title,
+.ktv-booking-header h2,
 .ktv-booking-header h3,
 .ktv-review-progressive h3,
 .ktv-contact-header h3,
@@ -227,12 +244,14 @@
     z-index: 10;
 }
 
+.ktv-modal-header h2,
 .ktv-modal-header h3 {
     margin: 0;
     font-size: 22px;
     font-weight: 600;
 }
 
+.ktv-modal-header h2 i,
 .ktv-modal-header h3 i { margin-right: 10px; }
 
 .ktv-modal-close {
@@ -1113,7 +1132,7 @@ body.ktv-modal-open { overflow: hidden; }
     visibility: visible !important;
     opacity: 1 !important;
     text-decoration: line-through;
-    color: #6e6e6e;
+    color: var(--ktv-old-price-color, #595959);
     font-size: 14px;
     margin-right: 8px;
 }
@@ -1124,8 +1143,9 @@ body.ktv-modal-open { overflow: hidden; }
     opacity: 1 !important;
     font-size: 24px;
     font-weight: 700;
-    color: var(--ktv-primary);
+    color: var(--ktv-offer-price-color, var(--ktv-primary));
 }
+
 
 .ktv-price-unit,
 .ktv-price-unit--per-day,
@@ -1139,8 +1159,9 @@ body.ktv-modal-open { overflow: hidden; }
 
 .ktv-gst-badge {
     display: inline-block;
-    background: var(--ktv-gst-bg);
-    color: var(--ktv-gst-color);
+    background-color: var(--ktv-gst-bg, #fff3e0);
+    background: var(--ktv-gst-bg, #fff3e0);
+    color: var(--ktv-gst-color, #7c2d12);
     padding: 2px 8px;
     border-radius: 4px;
     font-size: 10px;
@@ -1151,6 +1172,7 @@ body.ktv-modal-open { overflow: hidden; }
 }
 
 .ktv-gst-badge i {
+    color: inherit;
     margin-right: 3px;
     font-size: 10px;
     vertical-align: middle;
@@ -1158,8 +1180,9 @@ body.ktv-modal-open { overflow: hidden; }
 
 .ktv-gst-badge:hover {
     transform: scale(1.05);
-    box-shadow: 0 2px 8px rgba(255,107,0,0.2);
+    box-shadow: 0 2px 8px rgba(124, 45, 18, 0.2);
 }
+
 
 /* ============================================================
    18. TOUR CARD BOOK BUTTON
@@ -1529,8 +1552,33 @@ button.ktv-zero-reviews-link {
     transition: transform 0.2s ease;
 }
 
-.ktv-pax-item span { display: block; color: #595959; margin-bottom: 2px; }
-.ktv-pax-item strong { color: var(--ktv-primary); font-size: 13px; }
+.ktv-pax-single-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--ktv-pax-bg, #f4f8f6);
+    margin-bottom: 12px;
+}
+.ktv-pax-icons-group {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    margin-bottom: 4px;
+}
+
+.ktv-pax-icons-group i {
+    display: inline-block !important;
+    margin-bottom: 0 !important;
+}
+
+.ktv-pax-item span { display: block; color: var(--ktv-pax-text, #222222); margin-bottom: 2px; }
+.ktv-pax-item strong { color: var(--ktv-pax-price, #0b5e2b); font-size: 13px; }
+
 
 /* ============================================================
    27. GALLERY SLIDER
@@ -1788,13 +1836,13 @@ button.ktv-zero-reviews-link {
     display: flex !important;
     flex-direction: row !important;
     flex-wrap: nowrap !important;
-    will-change: transform;
     width: 100%;
     min-height: 400px;
     position: relative;
     gap: 0 !important;
     transform-style: preserve-3d;
 }
+
 
 .ktv-pixel-carousel-track.ktv-effect-slide {
     transition: transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
@@ -1953,19 +2001,6 @@ button.ktv-zero-reviews-link {
 .ktv-pixel-slider-prev { left: 15px; }
 .ktv-pixel-slider-next { right: 15px; }
 
-.ktv-pixel-slider-dots {
-    position: absolute;
-    bottom: 20px;
-    left: 0;
-    right: 0;
-    display: flex;
-    justify-content: center;
-    gap: 12px;
-    z-index: 20;
-    padding: 0;
-    margin: 0;
-}
-
 .ktv-pixel-slider-dot {
     width: var(--ktv-dot-size, 12px);
     height: var(--ktv-dot-size, 12px);
@@ -1973,8 +2008,7 @@ button.ktv-zero-reviews-link {
     border-radius: 50%;
     cursor: pointer;
     transition: background-color 0.3s ease,
-                width 0.3s ease,
-                border-radius 0.3s ease;
+                transform 0.3s ease;
     display: inline-block;
     border: 2px solid transparent;
     flex-shrink: 0;
@@ -1983,7 +2017,7 @@ button.ktv-zero-reviews-link {
 
 .ktv-pixel-slider-dot.active {
     background: var(--ktv-dot-active-color, #28a745) !important;
-    width: 30px !important;
+    transform: scaleX(2.2) !important;
     border-radius: 10px !important;
     border-color: var(--ktv-dot-active-color, #28a745) !important;
 }
@@ -2109,13 +2143,13 @@ button.ktv-zero-reviews-link {
 }
 
 .ktv-pixel-carousel-track.ktv-effect-blur .ktv-pixel-slide {
-    filter: blur(20px);
+    transform: scale(1.04);
     opacity: 0;
-    transition: filter 0.9s ease-in-out, opacity 0.9s ease-in-out;
+    transition: transform 0.9s ease-in-out, opacity 0.9s ease-in-out;
 }
 
 .ktv-pixel-carousel-track.ktv-effect-blur .ktv-pixel-slide.active {
-    filter: blur(0);
+    transform: scale(1);
     opacity: 1;
 }
 
@@ -2268,12 +2302,14 @@ button.ktv-zero-reviews-link {
     margin-bottom: 30px;
 }
 
+.ktv-booking-header h2,
 .ktv-booking-header h3 {
     font-size: 24px;
     margin-bottom: 5px;
     color: var(--ktv-dark);
 }
 
+.ktv-booking-header h2 i,
 .ktv-booking-header h3 i { margin-right: 10px; }
 
 .ktv-booking-header p { color: #595959; font-size: 14px; }
@@ -2670,6 +2706,43 @@ button.ktv-zero-reviews-link {
     transform: translateY(-2px);
     box-shadow: 0 8px 25px rgba(0,0,0,0.15);
     filter: brightness(0.95);
+}
+
+.ktv-form-step[data-step="1"] { color: var(--ktv-bf-travel-text, inherit); }
+.ktv-form-step[data-step="2"] { color: var(--ktv-bf-personal-text, inherit); }
+.ktv-form-step[data-step="3"] { color: var(--ktv-bf-payment-text, inherit); }
+
+.ktv-form-step[data-step="1"] .ktv-step-title,
+.ktv-form-step[data-step="1"] label,
+.ktv-form-step[data-step="1"] .ktv-guest-label {
+    color: var(--ktv-bf-travel-text, inherit);
+}
+
+.ktv-form-step[data-step="2"] .ktv-step-title,
+.ktv-form-step[data-step="2"] label {
+    color: var(--ktv-bf-personal-text, inherit);
+}
+
+.ktv-form-step[data-step="3"] .ktv-step-title,
+.ktv-form-step[data-step="3"] .ktv-summary,
+.ktv-form-step[data-step="3"] .ktv-payment-options label {
+    color: var(--ktv-bf-payment-text, inherit);
+}
+
+.ktv-form-step[data-step="1"] .ktv-step-next {
+    background: var(--ktv-bf-travel-btn-bg, var(--ktv-bf-step-next-bg, var(--ktv-primary)));
+    color: var(--ktv-bf-travel-btn-text, var(--ktv-bf-step-next-text, #fff));
+}
+
+.ktv-form-step[data-step="2"] .ktv-step-next {
+    background: var(--ktv-bf-personal-btn-bg, var(--ktv-bf-step-next-bg, var(--ktv-primary)));
+    color: var(--ktv-bf-personal-btn-text, var(--ktv-bf-step-next-text, #fff));
+}
+
+.ktv-form-step[data-step="3"] .ktv-submit-btn,
+.ktv-form-step[data-step="3"] .ktv-modal-btn {
+    background: var(--ktv-bf-payment-btn-bg, var(--ktv-bf-submit-bg, var(--ktv-primary)));
+    color: var(--ktv-bf-payment-btn-text, var(--ktv-bf-submit-text, #fff));
 }
 
 /* ============================================================
@@ -4234,14 +4307,13 @@ button.ktv-be-first-review {
 .ktv-booking-button-block i {
     font-weight: 900;
     font-style: normal;
+    margin-right: 8px;
 }
 
 .ktv-btn-small { padding: 8px 16px; font-size: 13px; border-radius: 6px; }
 .ktv-btn-medium { padding: 12px 30px; font-size: 15px; border-radius: 8px; }
 .ktv-btn-large { padding: 16px 40px; font-size: 18px; border-radius: 10px; }
 .ktv-btn-xlarge { padding: 20px 50px; font-size: 20px; border-radius: 12px; }
-
-.ktv-booking-button-block i { margin-right: 8px; }
 
 /* ============================================================
    52. FLIGHT DETAILS ROW
@@ -4859,6 +4931,7 @@ button.ktv-be-first-review {
 
 :is(.ktv-dark-mode, .ktv-dark-mode-global, [data-bs-theme="dark"], body.ktv-dark-mode-active) :is(
     .ktv-tour-title,
+    .ktv-booking-header h2,
     .ktv-booking-header h3,
     .ktv-review-progressive h3,
     .ktv-contact-header h3,
@@ -6693,7 +6766,7 @@ html[data-ktv-dark="1"] .flatpickr-months :is(.flatpickr-prev-month svg, .flatpi
 
 .ktv-toast.ktv-toast-success { background: #28a745; }
 .ktv-toast.ktv-toast-error { background: #dc3545; }
-.ktv-toast.ktv-toast-warning { background: #ff9800; max-width: 420px; white-space: normal; line-height: 1.5; }
+.ktv-toast.ktv-toast-warning { background: #fff3cd; color: #664d03; border: 1px solid #ffecb5; max-width: 420px; white-space: normal; line-height: 1.5; }
 .ktv-toast.ktv-toast-info { background: #075e54; }
 
 @media (max-width: 480px) {
@@ -7494,12 +7567,13 @@ html[data-ktv-dark="1"] .flatpickr-months :is(.flatpickr-prev-month svg, .flatpi
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 0;
-    height: 0;
+    width: 300px;
+    height: 300px;
     border-radius: 50%;
     background: rgba(255,255,255,0.3);
-    transform: translate(-50%,-50%);
-    transition: width 0.6s, height 0.6s;
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0;
+    transition: transform 0.6s ease, opacity 0.6s ease;
     pointer-events: none;
 }
 
@@ -7508,13 +7582,19 @@ html[data-ktv-dark="1"] .flatpickr-months :is(.flatpickr-prev-month svg, .flatpi
 .ktv-tour-package-btn:active::after,
 .ktv-book-now-btn:active::after,
 .ktv-booking-button-block:active::after {
-    width: 300px;
-    height: 300px;
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
 }
-
 /* ============================================================
    85. GLOBAL TRANSITIONS CONSOLIDATED
    ============================================================ */
+
+.ktv-tour-card,
+.ktv-tour-package-card,
+.ktv-review-card,
+.ktv-accordion-item {
+    contain: layout style paint;
+}
 
 .ktv-tour-card,
 .ktv-tour-package-card,
